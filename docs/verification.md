@@ -154,4 +154,6 @@ with fewer than three in-tile vertices).
 
 `tools/ctl.py boxes` toggles a faint outline on every object in the running
 wallpaper — the only way to see the whole box set without hovering each one.
-It is off by default: a wallpaper is not a debug view.
+It is off by default, drawn **only in interactive mode** (wallpaper mode stays
+chrome-free), and cleared automatically when interactivity is switched off, so
+an audit can never leak into the wallpaper you actually live with.

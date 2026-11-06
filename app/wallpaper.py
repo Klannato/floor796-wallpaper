@@ -159,6 +159,11 @@ def main():
                 state["hover"] = None
                 win.input_shape_combine_region(
                     _c.Region(_c.RectangleInt(0, 0, 0, 0)))
+        if not on and state["boxes"]:
+            # Leaving interactive mode ends the audit: the overlay must never
+            # survive into the wallpaper state, which is chrome-free by design.
+            state["boxes"] = False
+            print("all boxes: False (interactive off)", flush=True)
         # Offsets are hand-tuned in app/align.py; re-read them whenever the
         # mode changes so a saved alignment applies without a restart.
         refresh_alignment()
@@ -234,8 +239,13 @@ def main():
             w, h = view_size()
             cam = cam_for(mx, my)
             hover = state["hover"] if state["interactive"] else None
+            # The audit overlay is a debugging aid, so it is bound to the
+            # interactive state: a wallpaper in wallpaper mode draws no chrome
+            # at all, and even in interactive mode the normal case is one box
+            # under the cursor, not 857.
             scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo,
-                       background=bg, all_boxes=state["boxes"])
+                       background=bg,
+                       all_boxes=state["boxes"] and state["interactive"])
             return False
 
         def on_motion(_w, ev):
@@ -372,7 +382,9 @@ def main():
                 refresh_alignment()
             elif cmd == "boxes":
                 state["boxes"] = not state["boxes"]
-                print(f"all boxes: {state['boxes']}", flush=True)
+                note = "" if state["interactive"] else \
+                    " (only visible in interactive mode — Super+i)"
+                print(f"all boxes: {state['boxes']}{note}", flush=True)
                 queue()
             elif cmd == "quit":
                 Gtk.main_quit()
