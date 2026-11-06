@@ -10,6 +10,10 @@ import os
 
 SPACING_W, SPACING_H = 1016, 812
 TILE_W, TILE_H = 1024, 820
+# Links that name a region rather than an action. `hologram-area` is the only
+# one in the data; it must never produce a box or swallow a click.
+MARKER_LINKS = {"hologram-area"}
+
 ANIM_FRAME_W, ANIM_FRAME_H = 512, 410   # must match app/anim.py
 ANIM_COLS = 8
 
@@ -238,6 +242,8 @@ class Scene:
         sx, sy = cam.to_scene(px, py)
         best = None
         for o in self.objects:
+            if o.get("link") in MARKER_LINKS:
+                continue
             if o["x1"] <= sx <= o["x2"] and o["y1"] <= sy <= o["y2"]:
                 if allow is not None and not allow(o):
                     continue

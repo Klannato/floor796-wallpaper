@@ -66,6 +66,10 @@ def resolve(link, holo=None):
         print(f"event {link} — site-side effect, not reproduced", flush=True)
         return "event (not reproduced)"
 
+    if link == "hologram-area":
+        # region marker, not an action; normally filtered out before this
+        return "area marker"
+
     if link.startswith(("http://", "https://")):
         _open(link)
         return "url"
