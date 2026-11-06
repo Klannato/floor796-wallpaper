@@ -173,11 +173,17 @@ class Scene:
         _gi.require_version("Gdk", "3.0")
         from gi.repository import Gdk
 
-        # keyed first: same art with the flat backing colour knocked out, so
-        # edge tiles stop painting a grey slab over the wallpaper
-        for path in (os.path.join(self.keyed_dir, f"{tid}.png"),
-                     os.path.join(self.rips_dir, f"{tid}.webp"),
-                     os.path.join(self.tiles_dir, f"{tid}.webp")):
+        # With a silhouette mask loaded, the mask alone decides what is art:
+        # the colour key cannot tell void from dark artwork that touches it, and
+        # keys pixels out of the art edge (stray black dots). Without a mask the
+        # key is the only edge treatment we have.
+        candidates = ([os.path.join(self.rips_dir, f"{tid}.webp"),
+                       os.path.join(self.tiles_dir, f"{tid}.webp")]
+                      if self.mask_path_set else
+                      [os.path.join(self.keyed_dir, f"{tid}.png"),
+                       os.path.join(self.rips_dir, f"{tid}.webp"),
+                       os.path.join(self.tiles_dir, f"{tid}.webp")])
+        for path in candidates:
             if os.path.exists(path) and os.path.getsize(path) > 1024:
                 break
         else:

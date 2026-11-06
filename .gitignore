@@ -1,6 +1,6 @@
 HANDOFF.md
-vendor/floor796-kiosk/
-vendor/*.json
+vendor/
+assets/*.jpg
 verify/
 __pycache__/
 *.pyc
