@@ -52,6 +52,11 @@ def main():
     ap.add_argument("--remove", action="store_true")
     args = ap.parse_args()
     mods = [m.strip() for m in args.mods.split(",") if m.strip()]
+    # COSMIC keys the map by the character produced: "I" only matches with
+    # Shift held. Without Shift the entry must be lowercase or it never fires.
+    key = args.key
+    if "Shift" not in mods and len(key) == 1 and key.isupper():
+        key = key.lower()
 
     text = read()
     # Drop any previous entry for this description, then re-insert.
@@ -59,7 +64,7 @@ def main():
                   lambda m: "" if DESC in m.group(0) else m.group(0), text)
 
     if not args.remove:
-        new = entry(mods, args.key, args.cmd)
+        new = entry(mods, key, args.cmd)
         if text.rstrip().endswith("}"):
             text = text.rstrip()[:-1].rstrip("\n") + "\n" + new + "}\n"
         else:
@@ -74,7 +79,7 @@ def main():
     if args.remove:
         print(f"removed '{DESC}' from {PATH}")
     else:
-        combo = "+".join(mods + [args.key])
+        combo = "+".join(mods + [key])
         print(f"bound {combo} -> {args.cmd}")
         print(f"file: {PATH}")
     print("cosmic-settings-daemon watches this file; no restart needed.")
