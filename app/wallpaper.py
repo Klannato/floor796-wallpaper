@@ -30,10 +30,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scene import Camera, Scene  # noqa: E402
 
 
-# interactive-mode chrome
-BTN_W, BTN_H, BTN_MARGIN = 150, 34, 18
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zoom", type=float, default=0.5)
@@ -90,6 +86,9 @@ def main():
                 state["hover"] = None
                 win.input_shape_combine_region(
                     _c.Region(_c.RectangleInt(0, 0, 0, 0)))
+        # Offsets are hand-tuned in app/align.py; re-read them whenever the
+        # mode changes so a saved alignment applies without a restart.
+        refresh_alignment()
         print(f"interactive: {on}", flush=True)
         queue()
 
@@ -106,25 +105,6 @@ def main():
             if area is not None:
                 area.queue_draw()
         return False
-
-    def button_rect(w):
-        return (w - BTN_W - BTN_MARGIN, BTN_MARGIN, BTN_W, BTN_H)
-
-    def draw_button(cr, w):
-        x, y, bw, bh = button_rect(w)
-        cr.set_source_rgba(0.06, 0.06, 0.09, 0.82)
-        cr.rectangle(x, y, bw, bh)
-        cr.fill_preserve()
-        cr.set_source_rgba(1.0, 0.85, 0.2, 0.9)
-        cr.set_line_width(1.5)
-        cr.stroke()
-        cr.set_source_rgba(1, 1, 1, 0.92)
-        cr.select_font_face("Sans", 0, 0)
-        cr.set_font_size(13)
-        label = "⟳ refresh alignment"
-        ext = cr.text_extents(label)
-        cr.move_to(x + (bw - ext[2]) / 2, y + (bh + ext[3]) / 2 - 2)
-        cr.show_text(label)
 
     def refresh_alignment():
         """Re-read the hand-tuned hologram offsets and repaint."""
@@ -160,8 +140,6 @@ def main():
             cam = cam_for(mx, my)
             hover = state["hover"] if state["interactive"] else None
             scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo)
-            if state["interactive"]:
-                draw_button(cr, w)
             return False
 
         def on_motion(_w, ev, mx=mx, my=my):
@@ -182,10 +160,6 @@ def main():
 
         def on_press(_w, ev, mx=mx, my=my, w=w):
             if not state["interactive"] or ev.button != 1:
-                return True
-            bx, by, bw, bh = button_rect(w)
-            if bx <= ev.x <= bx + bw and by <= ev.y <= by + bh:
-                refresh_alignment()
                 return True
             state["drag"] = (ev.x, ev.y, state["x"], state["y"])
             state["press"] = (ev.x, ev.y)
