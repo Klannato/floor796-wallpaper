@@ -32,6 +32,8 @@ CLIP = [(7 * 1016 + 105, 4 * 812 + 507),
         (7 * 1016 + 61, 5 * 812 + 339),
         (6 * 1016 + 696, 5 * 812 + 34)]
 
+OFFSETS_PATH = os.path.join(ROOT, "config", "holo_offsets.json")
+
 GAP, FADE_IN, NORMAL, FADE_OUT = 12, 24, 60, 24
 CYCLE = GAP + FADE_IN + NORMAL + FADE_OUT      # 120 frames = 10 s
 
@@ -42,6 +44,30 @@ class Hologram:
         self._maps = {}
         self._cur = {}
         self._names = None
+        self.offsets = self._load_offsets()
+        # preview mode, used by the alignment tool
+        self.preview_name = None
+        self.preview_frame = None
+
+    # ── per-scene alignment offsets (hand-tuned in app/align.py) ────────────
+    @staticmethod
+    def _load_offsets():
+        try:
+            import json
+            with open(OFFSETS_PATH) as f:
+                return {k: tuple(v) for k, v in json.load(f).items()}
+        except Exception:
+            return {}
+
+    def save_offsets(self):
+        import json
+        os.makedirs(os.path.dirname(OFFSETS_PATH), exist_ok=True)
+        with open(OFFSETS_PATH, "w") as f:
+            json.dump({k: list(v) for k, v in sorted(self.offsets.items())},
+                      f, indent=2)
+
+    def offset_for(self, name):
+        return self.offsets.get(name, (0, 0))
 
     def scenes(self):
         if self._names is None:
@@ -84,6 +110,9 @@ class Hologram:
         return surf
 
     def state(self, now=None):
+        if self.preview_name is not None:
+            idx = 0 if self.preview_frame is None else self.preview_frame
+            return self.preview_name, idx, 1.0
         """(scene name, frame index, alpha) for this instant."""
         names = self.scenes()
         if not names:
@@ -121,13 +150,14 @@ class Hologram:
         cr.save()
         cr.scale(cam.zoom, cam.zoom)
         cr.translate(-cam.x, -cam.y)
-        # clip to the room's projection quad
-        cr.move_to(*CLIP[0])
+        dx, dy = self.offset_for(name)
+        # clip to the room's projection quad (moves with the scene)
+        cr.move_to(CLIP[0][0] + dx, CLIP[0][1] + dy)
         for p in CLIP[1:]:
-            cr.line_to(*p)
+            cr.line_to(p[0] + dx, p[1] + dy)
         cr.close_path()
         cr.clip()
-        cr.set_source_surface(surf, HOLO_X, HOLO_Y)
+        cr.set_source_surface(surf, HOLO_X + dx, HOLO_Y + dy)
         cr.get_source().set_filter(__import__("cairo").FILTER_NEAREST)
         cr.paint_with_alpha(alpha)
         cr.restore()
