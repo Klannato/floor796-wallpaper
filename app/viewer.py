@@ -96,6 +96,10 @@ def run(args):
             return True
         if pool.live or state["holo"] is not None:
             request_redraw()
+        # Warm the hi-res tier a little before the zoom needs it, so the tile
+        # never sits at 512-upscaled for a second while a pack job spins up.
+        w, h = state["size"]
+        pool.prefetch_hi(list(scene.visible_tiles(cam, w, h)), cam.zoom)
         return True
 
     def request_redraw():
@@ -133,6 +137,9 @@ def run(args):
             o = scene.object_at(cam, ev.x, ev.y)
             if (o or {}).get("id") != (state["hover"] or {}).get("id"):
                 state["hover"] = o
+                if o:
+                    print(f"hover id={o['id']} bbox=({o['x1']},{o['y1']})-"
+                          f"({o['x2']},{o['y2']}) {o['title'][:50]}", flush=True)
                 request_redraw()
         return True
 

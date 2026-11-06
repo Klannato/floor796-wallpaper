@@ -34,7 +34,8 @@ LODS = [(0.0, 256), (0.45, 512), (0.95, 1024)]   # min zoom -> frame size
 FPS = 12
 N_FRAMES = 60
 MAP_BUDGET = 24            # open mappings; eviction only drops a view
-HI_RES_DISK_CAP = 12       # keep at most this many 1024 LOD files
+HI_RES_DISK_CAP = 32       # keep at most this many 1024 LOD files
+HI_PREFETCH_ZOOM = 0.7     # start packing 1024 before it is actually needed
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKER = os.path.join(ROOT, "tools", "pack_frames.py")
@@ -52,7 +53,7 @@ class AnimSheets:
         self._cur = {}         # (size, tid) -> (idx, surface)
         self._ids = {}         # size -> set(tid)
         self._missing = set()
-        self._gen = ThreadPoolExecutor(max_workers=1)
+        self._gen = ThreadPoolExecutor(max_workers=2)
         self._pending = set()
 
     # ── inventory ──────────────────────────────────────────────────────────
@@ -121,6 +122,15 @@ class AnimSheets:
                 self._pending.discard(tid)
 
         self._gen.submit(job)
+
+    def prefetch_hi(self, tids, zoom):
+        """Warm the 1024 tier ahead of the zoom level that needs it."""
+        if zoom < HI_PREFETCH_ZOOM:
+            return
+        avail = self.available(1024)
+        for tid in tids:
+            if tid not in avail:
+                self._request_hi(tid)
 
     def _prune_hi(self):
         d = os.path.join(self.root, "anim_1024")
