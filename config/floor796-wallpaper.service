@@ -1,0 +1,16 @@
+[Unit]
+Description=floor796 animated wallpaper (multi-monitor)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/geo/.local/bin/floor796-wallpaper
+Restart=always
+RestartSec=2
+# A wallpaper that keeps dying should back off rather than spin.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=graphical-session.target
