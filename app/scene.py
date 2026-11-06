@@ -52,6 +52,7 @@ class Scene:
         self.changelog = _load("changelog.json")
         self.tiles_dir = tiles_dir or os.path.join(ROOT, "vendor", "tiles")
         self.rips_dir = rips_dir or os.path.join(ROOT, "vendor", "rips")
+        self.keyed_dir = os.path.join(ROOT, "vendor", "keyed")
         self.tiles = {}          # id -> (row, col, preview_path)
         self.width = 0
         self.height = 0
@@ -62,10 +63,61 @@ class Scene:
                 self.tiles[tile["id"]] = (r, c, tile.get("preview", ""))
                 self.width = max(self.width, c * SPACING_W + TILE_W)
                 self.height = max(self.height, r * SPACING_H + TILE_H)
+        self.empty, self.content_bbox = self._content_index()
+        # how much of each tile is flat backing; a mostly-empty tile loses its
+        # animation so its opaque frames don't repaint the slab we keyed out
+        try:
+            with open(os.path.join(ROOT, "vendor", "keyed_index.json")) as f:
+                self.keyed_pct = json.load(f)
+        except Exception:
+            self.keyed_pct = {}
+        self.anim_max_backing = 40
         self.objects = self._objects()
         self._surfaces = {}      # tid -> cairo surface (LRU, see surface())
         self._surface_order = []
         self.surface_budget = 40  # ~3.4 MB per tile => ~136 MB cap
+
+    def _content_index(self):
+        """Tiles that are pure background, plus the bounding box of real art.
+
+        59 of the 110 tiles are literally flat (stddev 0.0): the scene is a
+        jagged complex on a void. Drawing those paints a grey slab over any
+        wallpaper behind it, so they are skipped and the art bbox is what the
+        render is cropped to.
+        """
+        cache = os.path.join(ROOT, "vendor", "content_index.json")
+        try:
+            with open(cache) as f:
+                d = json.load(f)
+            return set(d["empty"]), tuple(d["bbox"])
+        except Exception:
+            pass
+
+        from PIL import Image, ImageStat
+        empty, drawn = [], []
+        for tid, (r, c, _) in self.tiles.items():
+            path = os.path.join(self.rips_dir, f"{tid}.webp")
+            if not os.path.exists(path):
+                path = os.path.join(self.tiles_dir, f"{tid}.webp")
+            try:
+                st = ImageStat.Stat(Image.open(path).convert("RGB"))
+                flat = max(st.stddev) < 3.0
+            except Exception:
+                flat = True
+            (empty if flat else drawn).append(tid)
+        if drawn:
+            rects = [self.tile_rect(t) for t in drawn]
+            bbox = (min(r[0] for r in rects), min(r[1] for r in rects),
+                    max(r[0] + r[2] for r in rects), max(r[1] + r[3] for r in rects))
+        else:
+            bbox = (0, 0, self.width, self.height)
+        try:
+            os.makedirs(os.path.dirname(cache), exist_ok=True)
+            with open(cache, "w") as f:
+                json.dump({"empty": sorted(empty), "bbox": list(bbox)}, f)
+        except OSError:
+            pass
+        return set(empty), bbox
 
     # ── geometry ────────────────────────────────────────────────────────────
     def tile_rect(self, tid):
@@ -119,7 +171,10 @@ class Scene:
         _gi.require_version("Gdk", "3.0")
         from gi.repository import Gdk
 
-        for path in (os.path.join(self.rips_dir, f"{tid}.webp"),
+        # keyed first: same art with the flat backing colour knocked out, so
+        # edge tiles stop painting a grey slab over the wallpaper
+        for path in (os.path.join(self.keyed_dir, f"{tid}.png"),
+                     os.path.join(self.rips_dir, f"{tid}.webp"),
                      os.path.join(self.tiles_dir, f"{tid}.webp")):
             if os.path.exists(path) and os.path.getsize(path) > 1024:
                 break
@@ -148,16 +203,93 @@ class Scene:
             if tx < sx1 and tx + tw > sx0 and ty < sy1 and ty + th > sy0:
                 yield tid
 
-    def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
-             anim=None, holo=None):
+    def reload_mask(self):
+        """Re-read the mask from disk (after editing it in GIMP)."""
+        path = getattr(self, "mask_path", None)
+        if path:
+            self.mask_surf = None
+            self._mask_cache_key = None
+            self.load_mask(path)
+            return True
+        return False
+
+    def load_mask(self, path):
+        """Load a hand-drawn silhouette: white = keep, black = cut."""
         import cairo
-        cr.set_source_rgb(0.02, 0.02, 0.03)
-        cr.paint()
+        self.mask_path = path
+        from PIL import Image
+        im = Image.open(path).convert("L")
+        self.mask_size = im.size
+        self.mask_origin = (self.content_bbox[0], self.content_bbox[1])
+        buf = bytearray(im.tobytes())
+        self.mask_surf = cairo.ImageSurface.create_for_data(
+            buf, cairo.FORMAT_A8, im.width, im.height, im.width)
+        self._mask_buf = buf          # cairo reads straight from this buffer
+        print(f"mask: {path} {im.width}x{im.height}", flush=True)
+
+    def _mask_device(self, cam, view_w, view_h):
+        """Mask rendered into device space at the current zoom/pan.
+
+        A SurfacePattern with a hand-built matrix produced a blank mask; drawing
+        the mask into a viewport-sized A8 surface has no matrix ambiguity, at the
+        cost of one blit (cached until the camera moves).
+        """
+        import cairo
+        if not getattr(self, "mask_surf", None):
+            return None
+        key = (round(cam.zoom, 4), round(cam.x, 1), round(cam.y, 1),
+               view_w, view_h)
+        if getattr(self, "_mask_cache_key", None) == key:
+            return self._mask_cache
+        surf = cairo.ImageSurface(cairo.FORMAT_A8, view_w, view_h)
+        mcr = cairo.Context(surf)
+        mcr.scale(cam.zoom, cam.zoom)
+        mcr.translate(-(cam.x - self.mask_origin[0]),
+                      -(cam.y - self.mask_origin[1]))
+        mcr.set_source_surface(self.mask_surf, 0, 0)
+        mcr.get_source().set_filter(cairo.FILTER_NEAREST)
+        mcr.paint()
+        self._mask_cache, self._mask_cache_key = surf, key
+        return surf
+
+    def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
+             anim=None, holo=None, background=None):
+        import cairo
+        if background is not None:
+            paint_cover(cr, background, view_w, view_h)
+        else:
+            cr.set_source_rgb(0.02, 0.02, 0.03)
+            cr.paint()
+
+        mask = self._mask_device(cam, view_w, view_h)
+        if mask is not None:
+            # Draw the scene offscreen, then composite it through the mask so a
+            # hand-drawn boundary is exact rather than guessed at per tile.
+            tmp = cairo.ImageSurface(cairo.FORMAT_ARGB32, view_w, view_h)
+            tcr = cairo.Context(tmp)
+            self._paint_tiles(tcr, cam, view_w, view_h, smooth, anim)
+            cr.set_source_surface(tmp, 0, 0)
+            cr.mask_surface(mask, 0, 0)
+        else:
+            self._paint_tiles(cr, cam, view_w, view_h, smooth, anim)
+
+        if holo is not None:
+            holo.draw(cr, cam, view_w, view_h)
+
+        if objs:
+            self._draw_boxes(cr, cam, view_w, view_h, hover)
+
+    def _paint_tiles(self, cr, cam, view_w, view_h, smooth, anim):
+        import cairo
         cr.save()
         cr.scale(cam.zoom, cam.zoom)
         cr.translate(-cam.x, -cam.y)
         for tid in self.visible_tiles(cam, view_w, view_h):
-            frame = anim.frame_for(tid, cam.zoom) if anim is not None else None
+            if tid in self.empty:
+                continue          # void tile: let the wallpaper show through
+            animated = (anim is not None
+                        and self.keyed_pct.get(tid, 0) < self.anim_max_backing)
+            frame = anim.frame_for(tid, cam.zoom) if animated else None
             surf = frame if frame is not None else self.surface(tid)
             if surf is None:
                 continue
@@ -179,12 +311,6 @@ class Scene:
             cr.paint()
             cr.restore()
         cr.restore()
-
-        if holo is not None:
-            holo.draw(cr, cam, view_w, view_h)
-
-        if objs:
-            self._draw_boxes(cr, cam, view_w, view_h, hover)
 
     def _draw_boxes(self, cr, cam, view_w, view_h, hover):
         """Only the hovered object is ever drawn.
@@ -251,6 +377,20 @@ class Scene:
                 if best is None or area < best[0]:
                     best = (area, o)
         return best[1] if best else None
+
+
+def paint_cover(cr, surf, w, h):
+    """Scale an image to cover w x h, centred (like CSS object-fit: cover)."""
+    iw, ih = surf.get_width(), surf.get_height()
+    scale = max(w / iw, h / ih)
+    dw, dh = iw * scale, ih * scale
+    cr.save()
+    cr.translate((w - dw) / 2, (h - dh) / 2)
+    cr.scale(scale, scale)
+    cr.set_source_surface(surf, 0, 0)
+    cr.get_source().set_filter(__import__("cairo").FILTER_GOOD)
+    cr.paint()
+    cr.restore()
 
 
 def headless(scene, cam, w, h, out, objs=True):

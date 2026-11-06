@@ -39,6 +39,10 @@ def main():
                     choices=["background", "bottom", "top"])
     ap.add_argument("--interactive", action="store_true")
     ap.add_argument("--no-animate", action="store_true")
+    ap.add_argument("--background", default="assets/background.jpg",
+                    help="desktop image behind the scene (empty to disable)")
+    ap.add_argument("--mask", default=None,
+                    help="silhouette PNG (white=keep, black=cut)")
     args = ap.parse_args()
 
     import gi
@@ -48,6 +52,31 @@ def main():
     from gi.repository import Gtk, Gdk, GLib, GtkLayerShell
 
     scene = Scene()
+    if args.mask:
+        scene.load_mask(args.mask)
+    bg = None
+    if args.background:
+        import gi as _gi
+        _gi.require_version("GdkPixbuf", "2.0")
+        _gi.require_version("Gdk", "3.0")
+        from gi.repository import GdkPixbuf, Gdk as _Gdk
+        import cairo as _cairo
+        bg_path = args.background
+        if not os.path.isabs(bg_path):
+            bg_path = os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), bg_path)
+        if os.path.exists(bg_path):
+            _pix = GdkPixbuf.Pixbuf.new_from_file(bg_path)
+            bg = _cairo.ImageSurface(_cairo.FORMAT_ARGB32,
+                                     _pix.get_width(), _pix.get_height())
+            _cr = _cairo.Context(bg)
+            _Gdk.cairo_set_source_pixbuf(_cr, _pix, 0, 0)
+            _cr.paint()
+            print(f"backdrop: {bg_path} ({_pix.get_width()}x{_pix.get_height()})",
+                  flush=True)
+        else:
+            print(f"backdrop missing: {bg_path}", flush=True)
+
     anim = holo = None
     if not args.no_animate:
         from anim import AnimSheets
@@ -119,6 +148,8 @@ def main():
     def refresh_alignment():
         """Re-read the hand-tuned hologram offsets and repaint."""
         got = holo.reload_offsets() if holo is not None else {}
+        if scene.reload_mask():
+            print("mask reloaded", flush=True)
         holo._cur.clear() if holo is not None else None
         print(f"alignment refreshed: {len(got)} scene offset(s)", flush=True)
         queue()
@@ -149,7 +180,8 @@ def main():
         def on_draw(_w, cr, mx=mx, my=my, w=w, h=h):
             cam = cam_for(mx, my)
             hover = state["hover"] if state["interactive"] else None
-            scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo)
+            scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo,
+                       background=bg)
             return False
 
         def on_motion(_w, ev, mx=mx, my=my):
