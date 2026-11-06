@@ -183,29 +183,26 @@ class Scene:
             self._draw_boxes(cr, cam, view_w, view_h, hover)
 
     def _draw_boxes(self, cr, cam, view_w, view_h, hover):
+        """Only the hovered object is ever drawn.
+
+        Everything else is invisible: this is a wallpaper, not a debug view.
+        """
+        if not hover:
+            return
+        o = hover
         z = cam.zoom
-        sx1, sy1 = cam.x + view_w / z, cam.y + view_h / z
-        for o in self.objects:
-            if o["x2"] < cam.x or o["x1"] > sx1 or o["y2"] < cam.y or o["y1"] > sy1:
-                continue
-            x = (o["x1"] - cam.x) * z
-            y = (o["y1"] - cam.y) * z
-            w = (o["x2"] - o["x1"]) * z
-            h = (o["y2"] - o["y1"]) * z
-            hot = hover and o["id"] == hover["id"]
-            if hot:
-                cr.set_source_rgba(1.0, 0.85, 0.2, 0.22)
-                cr.rectangle(x, y, w, h)
-                cr.fill()
-                cr.set_source_rgba(1.0, 0.85, 0.2, 1.0)
-                cr.set_line_width(max(2, 2 * z))
-            else:
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.18)
-                cr.set_line_width(max(1, z))
-            cr.rectangle(x, y, w, h)
-            cr.stroke()
-        if hover:
-            self._panel(cr, hover)
+        x = (o["x1"] - cam.x) * z
+        y = (o["y1"] - cam.y) * z
+        w = (o["x2"] - o["x1"]) * z
+        h = (o["y2"] - o["y1"]) * z
+        cr.set_source_rgba(1.0, 0.85, 0.2, 0.20)
+        cr.rectangle(x, y, w, h)
+        cr.fill()
+        cr.set_source_rgba(1.0, 0.85, 0.2, 1.0)
+        cr.set_line_width(max(2, 2 * z))
+        cr.rectangle(x, y, w, h)
+        cr.stroke()
+        self._panel(cr, o)
 
     def _panel(self, cr, o):
         import cairo as _c

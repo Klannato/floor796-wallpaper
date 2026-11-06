@@ -32,7 +32,8 @@ def run(args):
     cam = Camera(*[float(v) for v in args.camera.split(",")]) \
         if args.camera else Camera()
     state = {"hover": None, "drag": None, "size": (args.width, args.height),
-             "dirty": False, "anim": None, "holo": None}
+             "dirty": False, "anim": None, "holo": None,
+             "interactive": args.interactive}
     if not args.no_animate:
         from anim import AnimSheets
         from holo import Hologram
@@ -76,9 +77,9 @@ def run(args):
         return False
 
     def hud(cr, w, h, cam, scene):
-        txt = (f"{cam.x:.0f},{cam.y:.0f}  zoom {cam.zoom:.2f}  "
-               f"map {scene.width}x{scene.height}  "
-               f"[drag pan · wheel zoom · 0 fit · f fullscreen · q quit]")
+        mode = "INTERACTIVE" if state["interactive"] else "wallpaper"
+        txt = (f"{cam.x:.0f},{cam.y:.0f}  zoom {cam.zoom:.2f}  {mode}  "
+               f"[i toggle · drag pan · wheel zoom · 0 fit · f full · q quit]")
         cr.select_font_face("Sans", 0, 0)
         cr.set_font_size(12)
         ext = cr.text_extents(txt)
@@ -88,6 +89,23 @@ def run(args):
         cr.set_source_rgba(0.85, 0.85, 0.85, 1)
         cr.move_to(22, h - 14)
         cr.show_text(txt)
+
+    def set_interactive(on):
+        """Interactivity on = pointer events + hover panels.
+
+        Off = pure wallpaper: an empty input region so clicks fall through to
+        whatever is behind (GTK3 maps this to wl_surface.set_input_region).
+        """
+        import cairo as _c
+        state["interactive"] = on
+        if on:
+            win.input_shape_combine_region(None)
+        else:
+            state["hover"] = None
+            win.input_shape_combine_region(
+                _c.Region(_c.RectangleInt(0, 0, 0, 0)))
+        print(f"interactive: {on}", flush=True)
+        request_redraw()
 
     def tick():
         """Prefetch neighbour sheets, then repaint animated tiles."""
@@ -120,6 +138,14 @@ def run(args):
     def on_press(_w, ev):
         if ev.button == 1:
             state["drag"] = (ev.x, ev.y, cam.x, cam.y)
+            if state["interactive"]:
+                o = scene.object_at(cam, ev.x, ev.y)
+                if o and o.get("link"):
+                    import subprocess
+                    subprocess.Popen(["xdg-open", o["link"]],
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                    print(f"opened {o['link']}", flush=True)
         return True
 
     def on_release(_w, ev):
@@ -133,7 +159,7 @@ def run(args):
             cam.y = cy - (ev.y - y0) / cam.zoom
             cam.clamp(scene.width, scene.height, *state["size"])
             request_redraw()
-        else:
+        elif state["interactive"]:
             o = scene.object_at(cam, ev.x, ev.y)
             if (o or {}).get("id") != (state["hover"] or {}).get("id"):
                 state["hover"] = o
@@ -180,6 +206,9 @@ def run(args):
             cam.zoom = min(state["size"][0] / scene.width,
                            state["size"][1] / scene.height)
             cam.x = cam.y = 0
+        elif k == G.KEY_i:
+            set_interactive(not state["interactive"])
+            return True
         elif k == G.KEY_f:
             if win.get_window() and win.get_window().get_state() & G.WindowState.FULLSCREEN:
                 win.unfullscreen()
@@ -211,6 +240,7 @@ def run(args):
     win.connect("destroy", Gtk.main_quit)
 
     win.show_all()
+    set_interactive(args.interactive)
     GLib.timeout_add(80, tick)
     area.grab_focus()
     print(f"scene {scene.width}x{scene.height}, {len(scene.objects)} objects, "
@@ -232,6 +262,8 @@ def main():
     ap.add_argument("--no-boxes", action="store_true")
     ap.add_argument("--smooth", action="store_true",
                     help="bilinear tile scaling (blurry — off by default)")
+    ap.add_argument("--interactive", action="store_true",
+                    help="start with hover/click enabled (default: wallpaper)")
     ap.add_argument("--no-animate", action="store_true",
                     help="static tiles only, no mp4 playback")
     ap.add_argument("--bench", type=int, metavar="N",
