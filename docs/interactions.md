@@ -6,38 +6,65 @@ own click handler does. A `||` tail can rescue an otherwise dead click, which is
 why the teleport pads below count as partial rather than dead.
 
 ```
-works    803   every part of the link is something the wallpaper performs
+works    807   every part of the link is something the wallpaper performs
 partial    8   the click does something, but not everything the site does
-dead      17   nothing happens at all
+dead      13   nothing happens at all
 inert     29   there is no action in the data — the site does nothing either
 ```
 
-## Dead (17)
+## The addon layer
 
-| id | title | link | what the site does / why we can't |
+Most of the site's animated effects are neither in the tile art nor in
+`changelog.json`. `matrix.json["addons"]` lists **24 addons**, each a
+`render.js` scoped to a region; most only dispatch `add-render-slot` with a
+`.f796.br` clip, a screen point and an offset. Those clips are ordinary files
+over HTTP, so they are ripped verbatim with the kiosk's decoder:
+
+```bash
+python3 tools/rip_addons.py            # clips -> vendor/addons/**/*.webp + manifest
+```
+
+Ripped so far (`vendor/addons/manifest.json` — 12 clips, 26 MB, lossless WebP):
+
+| addon | clips | behaviour |
+|---|---|---|
+| teleport-room | 8 × 60f @ 289×412 | the eight characters dance on the pad; one character per 5 s loop, a click advances now |
+| cemetery-fog | 1 × 60f @ 85×73 | loops in the cemetery, always on |
+| where-is-waldo | 1 × 60f @ 89×77 | one shot on click — Waldo appears in full and waves |
+| meg | 1 × 60f @ 143×111 | one shot on click |
+| banksy | 1 × 60f @ 53×128 | one shot on click |
+
+Placement is the site's own: the manifest stores the scene point from each
+addon's `render.js`, its `OFFSET_X/OFFSET_Y`, its size and — for the teleporter —
+its clip polygon. Verified by rendering the pad headlessly: the couple
+composites seamlessly, no offset, no rectangular patch.
+
+## Dead (13)
+
+| id | title | link | why |
 |---|---|---|---|
-| 314 | Chuck Norris | `event://chuck-norris` | FAQ: "Click on the Chunk Norris in the park zone." The effect is a DOM `CustomEvent` handled by the site's own JS — no asset to replay. |
-| 361 | Where's Waldo | `event://where-is-waldo` | FAQ: "if you click on him, he will appear in full and wave at you." Site-side animation, same problem. |
-| 564 | Jaws 19 (Back to the Future 2) | `event://jaws19` | Ad screen plays a site-side animation. |
-| 708 | Naruto Uzumaki | `event://naruto` | Site-side animation ("Click on Naruto near the pirate ship"). |
-| 728 | cable | `event://cable` | Not described in the site's FAQ. |
-| 895 | Fog Generator | `event://fog` | Not described in the site's FAQ. |
-| 668 | Wishing Black Hole | `event://popcorn` | Not described in the site's FAQ. |
-| 829 | Meg (Family Guy) | `event://meg-family-guy` | Not described in the site's FAQ. |
-| 922 | Girl with Balloon (Banksy, 2002) | `event://banksy` | Not described in the site's FAQ. |
-| 406–413 | Hologram #7 … #14 | `event://pick-hologram-6…13` | The site has 14 scenes; only 6 have public `.f796.br` recordings, and `tools/rip_hologram.py` refuses the rest rather than modulo-ing into the wrong scene. |
+| 728 | cable | `event://cable` | addon `render-cable.js` exists, not ripped yet |
+| 708 | Naruto Uzumaki | `event://naruto` | addon clip exists upstream, not ripped yet |
+| 668 | Wishing Black Hole | `event://popcorn` | no addon in `matrix.json`; effect unknown |
+| 564 | Jaws 19 (Back to the Future 2) | `event://jaws19` | addon clip exists upstream, not ripped yet |
+| 406–413 | Hologram #7 … #14 | `event://pick-hologram-6…13` | only 6 of 14 scenes have public recordings |
 
-The nine `event://` easter eggs all reduce to one missing capability: the site
-dispatches a named `CustomEvent` and its own CSS/JS draws the result. Nothing in
-`changelog.json` describes that visual, so reproducing them means hand-rebuilding
-each effect against the tile art — a per-object art job, not a data fix.
-Everything else about those objects works: they get a box, a panel with
-title/date/link, and the log names the event.
+## Not yet ripped — the other 19 addons
+
+`tools/rip_addons.py` takes one declarative row per addon (point, offset, size,
+duration, clip URL). The remaining clip-based ones — `jaws19`, `naruto`,
+`quest-tuner`, `quest-gems`, `free-ads`, `twin-pines-mall`, `interstellar`,
+`change-my-mind` — extract the same way: pull those constants out of each
+`render.js` and add a row. The canvas ones (`chuck`, `stat`, `melody`,
+`fun-drawing`, `power-station-stat`, `memorial1`, `quest-laboratory`) draw with
+their own JS: chuck needs `hand.png` + `cracks.png` + `punch.mp3` (all public)
+and a small reimplementation; the rest are better opened as pages.
 
 ## Partial (8) — teleport pads
 
-`event://pick-teleport-N||no-click||https://…jpg` — the reference still opens,
-but the teleport itself needs the kiosk's pad gating (scene state we don't model).
+`event://pick-teleport-N||no-click||https://…jpg` — the reference still opens and
+the pad now animates the matching character, but the teleport itself needs the
+kiosk's pad gating (materialise/dematerialise state we don't model).
 
 | id | title | opens |
 |---|---|---|
@@ -57,18 +84,16 @@ My Hero Academia group, both crowds…) and 2 are region markers
 (`hologram-area`, `teleport-area`). The site does nothing on click for these
 either; they are hover info only.
 
-## Fixed in v1.0.3
+## Fixed along the way
 
-- **`interactive://` pages 404'd without exception.** The site serves them from
-  `/interactive/`, and `links.py` opened `floor796.com/<path>`. All 15 pages —
-  the shower cam, Racer-796, the four quests, the statistics board, Melody,
-  Fun Drawing, Mr. Bean, Free Ads, Payphone, Memorial, Change My Mind,
-  Microscope, PC — returned 404. All 15 now return 200 (probed in the audit).
-- **Only the first `||` part was ever run.** `play://x.mp3||https://…jpg` lost
-  both halves, and the six audio objects (Half-Life health charger, H.E.V, Duke
-  Nukem, Lapin-ivre, Zodiac) did nothing at all. `play://`, `play-loop://` and
-  `play-loop-no-sync://` now play through `ffplay` at volume 0.5 like the site,
-  and a second part opens alongside.
+- **`interactive://` pages 404'd without exception** (v1.0.3). The site serves
+  them from `/interactive/`, and `links.py` opened `floor796.com/<path>`; all 15
+  now return 200 (probed in the audit).
+- **Only the first `||` part was ever run** (v1.0.3) — `play://x.mp3||https://…jpg`
+  lost both halves and the six audio objects were silent. They now play through
+  `ffplay` at volume 0.5 like the site.
+- **The addon layer was missing entirely** (v1.0.4): the teleporter characters,
+  the cemetery fog, Waldo's wave, meg and banksy are now the site's own frames.
 
 ## Reproducing the numbers
 

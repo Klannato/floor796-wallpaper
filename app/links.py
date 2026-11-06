@@ -63,7 +63,7 @@ def hologram_pad_index(link):
     return None
 
 
-def _part(part, holo):
+def _part(part, holo, addons=None):
     """Act on one `||`-separated part; returns its description or None."""
     if part == "no-click":
         return None
@@ -98,6 +98,12 @@ def _part(part, holo):
         return "hologram (no scenes)"
 
     if part.startswith("event://"):
+        name = part[len("event://"):].split("?")[0]
+        # An addon clip can reproduce some of these: the site dispatches the
+        # same event name, and the addon's own render.js plays its frames.
+        if addons is not None and addons.trigger_event(name):
+            print(f"event {name} -> addon clip", flush=True)
+            return f"event {name} (clip)"
         print(f"event {part} — site-side effect, not reproduced", flush=True)
         return "event (not reproduced)"
 
@@ -112,11 +118,11 @@ def _part(part, holo):
     return "unhandled"
 
 
-def resolve(link, holo=None):
+def resolve(link, holo=None, addons=None):
     """Act on a changelog link. Returns a short description of what happened."""
     parts = [p.strip() for p in (link or "").split("||") if p.strip()]
     if not parts:
         return "no link"
-    done = [_part(p, holo) for p in parts]
+    done = [_part(p, holo, addons) for p in parts]
     done = [d for d in done if d]
     return ", ".join(done) if done else "inert"

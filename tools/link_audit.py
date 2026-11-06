@@ -78,7 +78,7 @@ def http(url):
         return "err"
 
 
-def audit(link, scenes, probe):
+def audit(link, scenes, probe, addon_names=frozenset()):
     """-> (state, actionable[], unreproduced[]) for one object's link."""
     actionable, unreproduced, broken_urls = [], [], []
     parts = parts_of(link)
@@ -103,8 +103,15 @@ def audit(link, scenes, probe):
                     unreproduced.append(f"hologram {val} (not ripped)")
             except ValueError:
                 unreproduced.append(f"hologram {val} (unparsable)")
-        elif kind in ("event", "teleport"):
-            unreproduced.append(val if kind == "event" else "teleport gate")
+        elif kind == "event":
+            # A ripped addon clip reproduces some of these: the site dispatches
+            # the same event name and the addon plays its frames.
+            if val.split("?")[0] in addon_names:
+                actionable.append(f"clip {val}")
+            else:
+                unreproduced.append(val)
+        elif kind == "teleport":
+            unreproduced.append("teleport gate")
         # markers and no-click are neither: not actions at all
 
     if not actionable and not unreproduced:
@@ -134,10 +141,17 @@ def main():
     except Exception:
         scenes = 0
 
+    addon_names = frozenset()
+    try:
+        import addons as _addons
+        addon_names = frozenset(_addons.Addons().event_names())
+    except Exception:
+        pass
+
     rows = []
     for o in scene.changelog:
         probe = args.http
-        state, act, unrep = audit(o.get("l"), scenes, probe)
+        state, act, unrep = audit(o.get("l"), scenes, probe, addon_names)
         rows.append((o.get("id"), o.get("t", ""), state, act, unrep))
 
     counts = collections.Counter(r[2] for r in rows)

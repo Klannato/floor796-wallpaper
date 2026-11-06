@@ -37,10 +37,12 @@ def run(args):
              "press": None, "cand": None,
              "interactive": args.interactive}
     if not args.no_animate:
+        from addons import Addons
         from anim import AnimSheets
         from holo import Hologram
         state["anim"] = AnimSheets()
         state["holo"] = Hologram()
+        state["addons"] = Addons()
 
     win = Gtk.Window()
     win.set_title("floor796")
@@ -74,7 +76,8 @@ def run(args):
     def on_draw(_w, cr):
         w, h = state["size"]
         scene.draw(cr, cam, w, h, hover=state["hover"], smooth=args.smooth,
-                   anim=state["anim"], holo=state["holo"])
+                   anim=state["anim"], holo=state["holo"],
+                   addons=state.get("addons"))
         hud(cr, w, h, cam, scene)
         return False
 
@@ -193,7 +196,8 @@ def run(args):
         moved = abs(ev.x - p[0]) + abs(ev.y - p[1])
         if moved <= 4 and o.get("link"):
             import links
-            links.resolve(o["link"], holo=state["holo"])
+            links.resolve(o["link"], holo=state["holo"],
+                          addons=state.get("addons"))
             request_redraw()
         return True
 

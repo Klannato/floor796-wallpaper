@@ -128,12 +128,14 @@ def main():
         else:
             print(f"backdrop missing: {bg_path}", flush=True)
 
-    anim = holo = None
+    anim = holo = addons = None
     if not args.no_animate:
+        from addons import Addons
         from anim import AnimSheets
         from holo import Hologram
         anim = AnimSheets()
         holo = Hologram()
+        addons = Addons()
 
     state = {
         "x": args.scene_x, "y": args.scene_y, "zoom": args.zoom,
@@ -244,7 +246,7 @@ def main():
             # at all, and even in interactive mode the normal case is one box
             # under the cursor, not 857.
             scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo,
-                       background=bg,
+                       addons=addons, background=bg,
                        all_boxes=state["boxes"] and state["interactive"])
             return False
 
@@ -285,7 +287,12 @@ def main():
             if p0 and o and o.get("link") and (
                     abs(ev.x - p0[0]) + abs(ev.y - p0[1]) <= 4):
                 import links
-                links.resolve(o["link"], holo=holo)
+                # A click inside a multi-clip addon region (the teleporter)
+                # advances to the next character, like the site's pad list.
+                if addons is not None and addons.click(
+                        cam_for(*mon_geom(mon)[:2]), ev.x, ev.y):
+                    queue()
+                links.resolve(o["link"], holo=holo, addons=addons)
                 queue()
             return True
 
@@ -396,6 +403,8 @@ def main():
         print(f"control socket unavailable: {e}", flush=True)
 
     def tick():
+        if addons is not None and addons.items:
+            queue()          # addon clips run on the scene clock too
         if anim is not None and anim.live:
             queue()
             # Release frame mappings for tiles off screen. Safe here: this runs

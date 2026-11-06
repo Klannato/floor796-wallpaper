@@ -268,7 +268,8 @@ class Scene:
         return surf
 
     def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
-             anim=None, holo=None, background=None, all_boxes=False):
+             anim=None, holo=None, background=None, all_boxes=False,
+             addons=None):
         import cairo
         if background is not None:
             paint_cover(cr, background, view_w, view_h)
@@ -290,6 +291,12 @@ class Scene:
 
         if holo is not None:
             holo.draw(cr, cam, view_w, view_h)
+
+        if addons is not None:
+            # The site's own addon clips: the teleporter characters, fog, the
+            # click-triggered one-shots. Drawn after the tiles so they sit on
+            # the art, before the boxes so the hover outline stays on top.
+            addons.draw(cr, cam, view_w, view_h)
 
         if objs:
             self._draw_boxes(cr, cam, view_w, view_h, hover,
