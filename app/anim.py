@@ -30,12 +30,12 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-LODS = [(0.0, 256), (0.45, 512), (0.95, 1024)]   # min zoom -> frame size
+LODS = [(0.0, 256), (0.40, 512), (1.05, 1024)]   # min zoom -> frame size
 FPS = 12
 N_FRAMES = 60
 MAP_BUDGET = 24            # open mappings; eviction only drops a view
 HI_RES_DISK_CAP = 32       # keep at most this many 1024 LOD files
-HI_PREFETCH_ZOOM = 0.7     # start packing 1024 before it is actually needed
+HI_PREFETCH_ZOOM = 1.0     # 1024 frames cost 192 MB of mapping per tile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PACKER = os.path.join(ROOT, "tools", "pack_frames.py")
@@ -50,7 +50,8 @@ class AnimSheets:
         self.root = root or os.path.join(ROOT, "vendor")
         self._maps = {}        # (size, tid) -> memoryview
         self._order = []
-        self._cur = {}         # (size, tid) -> (idx, surface)
+        self._cur = {}         # (size, tid) -> (idx, surface, memoryview)
+        self._used = {}        # (size, tid) -> last frame time
         self._ids = {}         # size -> set(tid)
         self._missing = set()
         self._gen = ThreadPoolExecutor(max_workers=2)
@@ -174,7 +175,28 @@ class AnimSheets:
         # Pin the memoryview alongside the surface: cairo reads straight out of
         # that buffer, so it must outlive the surface.
         self._cur[key] = (idx, surf, mv)
+        self._used[key] = time.time()
         return surf
+
+    def prune(self, visible=(), budget=12):
+        """Drop mappings for tiles that are not on screen.
+
+        Runs from the event loop, never during a paint: dropping a mapping
+        while a cairo surface still references it segfaults a few seconds
+        later, so the paired surface is released first and only off-screen
+        tiles are dropped. Passing the visible set keeps this cheap — pruning
+        by timestamp alone thrashes whenever the view is full of tiles.
+        """
+        visible = set(visible)
+        drop = [k for k in self._maps if k[1] not in visible]
+        if len(self._maps) - len(drop) > budget:
+            drop += [k for k in sorted(self._maps,
+                                       key=lambda k: self._used.get(k, 0))
+                     if k[1] in visible][:-budget]
+        for key in drop:
+            self._cur.pop(key, None)
+            self._maps.pop(key, None)
+            self._used.pop(key, None)
 
     @property
     def live(self):

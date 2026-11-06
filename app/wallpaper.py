@@ -318,6 +318,13 @@ def main():
     def tick():
         if anim is not None and anim.live:
             queue()
+            # Release frame mappings for tiles off screen. Safe here: this runs
+            # between paints, not inside one. Every monitor contributes, since
+            # each has its own camera offset.
+            vis = set()
+            for _win, _mon, mx, my, w, h in state["wins"]:
+                vis.update(scene.visible_tiles(cam_for(mx, my), w, h))
+            anim.prune(vis)
         return True
 
     GLib.timeout_add(100, tick)

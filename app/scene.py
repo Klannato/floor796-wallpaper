@@ -75,7 +75,8 @@ class Scene:
         self.objects = self._objects()
         self._surfaces = {}      # tid -> cairo surface (LRU, see surface())
         self._surface_order = []
-        self.surface_budget = 40  # ~3.4 MB per tile => ~136 MB cap
+        self.surface_budget = 16  # ~3.4 MB per tile => ~55 MB cap; a
+                                  # viewport covers ~12 tiles at 0.5 zoom
 
     def _content_index(self):
         """Tiles that are pure background, plus the bounding box of real art.
@@ -219,13 +220,21 @@ class Scene:
         self.mask_path = path
         from PIL import Image
         im = Image.open(path).convert("L")
+        # Full-res A8 is 66 MB of anonymous memory for a silhouette whose only
+        # detail is an outline; editing stays at full size on disk.
+        self.mask_scale = 1.0
+        if im.width > 4096:
+            self.mask_scale = im.width / 4096
+            im = im.resize((4096, int(im.height / self.mask_scale)),
+                           Image.NEAREST)
         self.mask_size = im.size
         self.mask_origin = (self.content_bbox[0], self.content_bbox[1])
         buf = bytearray(im.tobytes())
         self.mask_surf = cairo.ImageSurface.create_for_data(
             buf, cairo.FORMAT_A8, im.width, im.height, im.width)
         self._mask_buf = buf          # cairo reads straight from this buffer
-        print(f"mask: {path} {im.width}x{im.height}", flush=True)
+        print(f"mask: {path} {im.width}x{im.height} "
+              f"(scale {self.mask_scale:g})", flush=True)
 
     def _mask_device(self, cam, view_w, view_h):
         """Mask rendered into device space at the current zoom/pan.
@@ -246,6 +255,7 @@ class Scene:
         mcr.scale(cam.zoom, cam.zoom)
         mcr.translate(-(cam.x - self.mask_origin[0]),
                       -(cam.y - self.mask_origin[1]))
+        mcr.scale(self.mask_scale, self.mask_scale)
         mcr.set_source_surface(self.mask_surf, 0, 0)
         mcr.get_source().set_filter(cairo.FILTER_NEAREST)
         mcr.paint()

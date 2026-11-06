@@ -101,20 +101,34 @@ class Hologram:
     def offset_for(self, name):
         return self.offsets.get(name, (0, 0))
 
-    def scenes(self):
-        if self._names is None:
-            if not os.path.isdir(self.dir):
-                self._names = []
-            else:
-                self._names = sorted(f for f in os.listdir(self.dir)
-                                     if f.endswith(".raw"))
-        return self._names
+    def tier(self, zoom):
+        """0 = half-res pack, 1 = full. Part of every cache key."""
+        lo = self.dir.rstrip("/") + "_lo"
+        return 0 if (zoom < 0.7 and os.path.isdir(lo)) else 1
 
-    def _map(self, name):
-        mv = self._maps.get(name)
+    def dir_for(self, zoom):
+        """Half-res scenes when zoomed out: each full one is 125 MB of frames."""
+        if zoom < 0.7:
+            lo = self.dir.rstrip("/") + "_lo"
+            if os.path.isdir(lo):
+                return lo
+        return self.dir
+
+    def scenes(self, zoom=None):
+        if zoom is not None:
+            d = self.dir_for(zoom)
+        else:
+            d = self.dir
+        if not os.path.isdir(d):
+            return []
+        return sorted(f for f in os.listdir(d) if f.endswith(".raw"))
+
+    def _map(self, name, zoom=None):
+        key = (name, self.tier(zoom if zoom is not None else 1.0))
+        mv = self._maps.get(key)
         if mv is not None:
             return mv
-        path = os.path.join(self.dir, name)
+        path = os.path.join(self.dir_for(zoom if zoom is not None else 1.0), name)
         try:
             fd = open(path, "rb")
             m = mmap.mmap(fd.fileno(), 0, access=mmap.ACCESS_COPY)
@@ -122,22 +136,37 @@ class Hologram:
         except OSError:
             return None
         mv = memoryview(m)
-        self._maps[name] = mv
+        # One scene at a time: each is 125 MB of frames, and only one is shown.
+        self._maps = {key: mv}
+        self._cur = {}
         return mv
 
-    def _surface(self, name, idx):
-        key = (name, idx)
+    def _surface(self, name, idx, zoom=None):
+        key = (name, idx, self.tier(zoom if zoom is not None else 1.0))
         cur = self._cur.get(key)
         if cur is not None:
             return cur[1]
-        mv = self._map(name)
+        mv = self._map(name, zoom)
         if mv is None:
             return None
         import cairo
-        off = idx * FRAME_BYTES
+        # Always 60 frames; the frame size differs between the full and half
+        # packs, so it is inferred per file rather than from FRAME_BYTES.
+        n = N_FRAMES
+        fb = len(mv) // n
+        est = int(round((fb / 4 * SCENE_W / SCENE_H) ** 0.5))
+        w = h = 0
+        for cand in (est, est - 1, est + 1, est - 2, est + 2):
+            if cand > 0 and fb % (cand * 4) == 0:
+                hh = fb // (cand * 4)
+                if hh > 0:
+                    w, h = cand, hh
+                    break
+        if not w:
+            return None
+        off = idx * fb
         surf = cairo.ImageSurface.create_for_data(
-            mv[off:off + FRAME_BYTES], cairo.FORMAT_ARGB32,
-            SCENE_W, SCENE_H, SCENE_W * 4)
+            mv[off:off + fb], cairo.FORMAT_ARGB32, w, h, w * 4)
         self._cur = {key: (idx, surf)}     # one scene frame is enough
         return surf
 
@@ -194,7 +223,7 @@ class Hologram:
         name, idx, alpha = self.state(now)
         if not name or alpha <= 0.01:
             return
-        surf = self._surface(name, idx)
+        surf = self._surface(name, idx, cam.zoom)
         if surf is None:
             return
 
