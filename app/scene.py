@@ -10,6 +10,8 @@ import os
 
 SPACING_W, SPACING_H = 1016, 812
 TILE_W, TILE_H = 1024, 820
+ANIM_FRAME_W, ANIM_FRAME_H = 512, 410   # must match app/anim.py
+ANIM_COLS = 8
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -57,7 +59,9 @@ class Scene:
                 self.width = max(self.width, c * SPACING_W + TILE_W)
                 self.height = max(self.height, r * SPACING_H + TILE_H)
         self.objects = self._objects()
-        self._surfaces = {}
+        self._surfaces = {}      # tid -> cairo surface (LRU, see surface())
+        self._surface_order = []
+        self.surface_budget = 40  # ~3.4 MB per tile => ~136 MB cap
 
     # ── geometry ────────────────────────────────────────────────────────────
     def tile_rect(self, tid):
@@ -100,6 +104,8 @@ class Scene:
         low-quality thumbnails and are visibly blurry when displayed.
         """
         if tid in self._surfaces:
+            self._surface_order.remove(tid)
+            self._surface_order.append(tid)
             return self._surfaces[tid]
         import gi
         gi.require_version("GdkPixbuf", "2.0")
@@ -123,6 +129,10 @@ class Scene:
         Gdk.cairo_set_source_pixbuf(cr, pix, 0, 0)
         cr.paint()
         self._surfaces[tid] = surf
+        self._surface_order.append(tid)
+        while len(self._surface_order) > self.surface_budget:
+            old = self._surface_order.pop(0)
+            self._surfaces.pop(old, None)
         return surf
 
     # ── drawing ─────────────────────────────────────────────────────────────
@@ -134,7 +144,8 @@ class Scene:
             if tx < sx1 and tx + tw > sx0 and ty < sy1 and ty + th > sy0:
                 yield tid
 
-    def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False):
+    def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
+             anim=None):
         import cairo
         cr.set_source_rgb(0.02, 0.02, 0.03)
         cr.paint()
@@ -142,14 +153,21 @@ class Scene:
         cr.scale(cam.zoom, cam.zoom)
         cr.translate(-cam.x, -cam.y)
         for tid in self.visible_tiles(cam, view_w, view_h):
-            surf = self.surface(tid)
+            frame = anim.frame_for(tid, cam.zoom) if anim is not None else None
+            surf = frame if frame is not None else self.surface(tid)
             if surf is None:
                 continue
             tx, ty, _, _ = self.tile_rect(tid)
             cr.save()
             cr.rectangle(tx, ty, TILE_W, TILE_H)
             cr.clip()
-            cr.set_source_surface(surf, tx, ty)
+            if frame is not None:
+                # Frames are 512x410 (1:1 at 0.5 zoom); stretch over the tile.
+                cr.translate(tx, ty)
+                cr.scale(TILE_W / frame.get_width(), TILE_H / frame.get_height())
+                cr.set_source_surface(frame, 0, 0)
+            else:
+                cr.set_source_surface(surf, tx, ty)
             # Pixel art: nearest-neighbour by default. Bilinear smears the
             # sprite edges and costs far more per pixel.
             cr.get_source().set_filter(

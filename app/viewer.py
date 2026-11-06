@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from scene import Camera, Scene, headless  # noqa: E402
+from scene import Camera, Scene, headless, SPACING_W, SPACING_H  # noqa: E402
 
 
 def run(args):
@@ -32,7 +32,10 @@ def run(args):
     cam = Camera(*[float(v) for v in args.camera.split(",")]) \
         if args.camera else Camera()
     state = {"hover": None, "drag": None, "size": (args.width, args.height),
-             "dirty": False}
+             "dirty": False, "anim": None}
+    if not args.no_animate:
+        from anim import AnimSheets
+        state["anim"] = AnimSheets()
 
     win = Gtk.Window()
     win.set_title("floor796")
@@ -65,7 +68,8 @@ def run(args):
 
     def on_draw(_w, cr):
         w, h = state["size"]
-        scene.draw(cr, cam, w, h, hover=state["hover"], smooth=args.smooth)
+        scene.draw(cr, cam, w, h, hover=state["hover"], smooth=args.smooth,
+                   anim=state["anim"])
         hud(cr, w, h, cam, scene)
         return False
 
@@ -83,9 +87,16 @@ def run(args):
         cr.move_to(22, h - 14)
         cr.show_text(txt)
 
-    def redraw():
-        # Coalesce: GTK already batches within a frame, but motion events can
-        # arrive far faster than we can paint. Only ever queue one idle flush.
+    def tick():
+        """Prefetch neighbour sheets, then repaint animated tiles."""
+        pool = state["anim"]
+        if pool is None:
+            return True
+        if pool.live:
+            request_redraw()
+        return True
+
+    def request_redraw():
         if state["dirty"]:
             return
         state["dirty"] = True
@@ -115,12 +126,12 @@ def run(args):
             cam.x = cx - (ev.x - x0) / cam.zoom
             cam.y = cy - (ev.y - y0) / cam.zoom
             cam.clamp(scene.width, scene.height, *state["size"])
-            redraw()
+            request_redraw()
         else:
             o = scene.object_at(cam, ev.x, ev.y)
             if (o or {}).get("id") != (state["hover"] or {}).get("id"):
                 state["hover"] = o
-                redraw()
+                request_redraw()
         return True
 
     def on_scroll(_w, ev):
@@ -135,7 +146,7 @@ def run(args):
         cam.x += before[0] - after[0]
         cam.y += before[1] - after[1]
         cam.clamp(scene.width, scene.height, *state["size"])
-        redraw()
+        request_redraw()
 
     def on_key(_w, ev):
         from gi.repository import Gdk as G
@@ -173,7 +184,7 @@ def run(args):
             moved = False
         if moved:
             cam.clamp(scene.width, scene.height, *state["size"])
-            redraw()
+            request_redraw()
         return True
 
     area.set_can_focus(True)
@@ -191,6 +202,7 @@ def run(args):
     win.connect("destroy", Gtk.main_quit)
 
     win.show_all()
+    GLib.timeout_add(80, tick)
     area.grab_focus()
     print(f"scene {scene.width}x{scene.height}, {len(scene.objects)} objects, "
           f"{len(scene.tiles)} tiles — {cam}")
@@ -211,6 +223,8 @@ def main():
     ap.add_argument("--no-boxes", action="store_true")
     ap.add_argument("--smooth", action="store_true",
                     help="bilinear tile scaling (blurry — off by default)")
+    ap.add_argument("--no-animate", action="store_true",
+                    help="static tiles only, no mp4 playback")
     ap.add_argument("--bench", type=int, metavar="N",
                     help="time N headless frames at --shot's camera and exit")
     args = ap.parse_args()
