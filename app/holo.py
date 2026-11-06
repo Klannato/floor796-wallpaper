@@ -237,7 +237,13 @@ class Hologram:
             cr.line_to(p[0] + dx, p[1] + dy)
         cr.close_path()
         cr.clip()
-        cr.set_source_surface(surf, HOLO_X + dx, HOLO_Y + dy)
+        # A half-res pack must be scaled back over the same footprint, or the
+        # projection covers half the room while the clip quad still fits the
+        # whole floor.
+        scale = SCENE_W / surf.get_width()
+        cr.translate(HOLO_X + dx, HOLO_Y + dy)
+        cr.scale(scale, scale)
+        cr.set_source_surface(surf, 0, 0)
         cr.get_source().set_filter(__import__("cairo").FILTER_NEAREST)
         cr.paint_with_alpha(alpha)
         cr.restore()
