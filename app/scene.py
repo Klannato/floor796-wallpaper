@@ -41,10 +41,11 @@ class Camera:
 
 
 class Scene:
-    def __init__(self, tiles_dir=None):
+    def __init__(self, tiles_dir=None, rips_dir=None):
         self.matrix = _load("matrix.json")
         self.changelog = _load("changelog.json")
         self.tiles_dir = tiles_dir or os.path.join(ROOT, "vendor", "tiles")
+        self.rips_dir = rips_dir or os.path.join(ROOT, "vendor", "rips")
         self.tiles = {}          # id -> (row, col, preview_path)
         self.width = 0
         self.height = 0
@@ -93,7 +94,11 @@ class Scene:
 
     # ── assets ──────────────────────────────────────────────────────────────
     def surface(self, tid):
-        """Lazily decoded tile image as a cairo surface (cached)."""
+        """Lazily decoded tile image as a cairo surface (cached).
+
+        Prefers the lossless rip from vendor/rips/ — the preview WebPs are
+        low-quality thumbnails and are visibly blurry when displayed.
+        """
         if tid in self._surfaces:
             return self._surfaces[tid]
         import gi
@@ -104,8 +109,11 @@ class Scene:
         _gi.require_version("Gdk", "3.0")
         from gi.repository import Gdk
 
-        path = os.path.join(self.tiles_dir, f"{tid}.webp")
-        if not os.path.exists(path):
+        for path in (os.path.join(self.rips_dir, f"{tid}.webp"),
+                     os.path.join(self.tiles_dir, f"{tid}.webp")):
+            if os.path.exists(path) and os.path.getsize(path) > 1024:
+                break
+        else:
             self._surfaces[tid] = None
             return None
         pix = GdkPixbuf.Pixbuf.new_from_file(path)
