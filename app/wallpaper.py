@@ -85,6 +85,8 @@ def main():
                     help="desktop image behind the scene (empty to disable)")
     ap.add_argument("--mask", default=None,
                     help="silhouette PNG (white=keep, black=cut)")
+    ap.add_argument("--debug-boxes", action="store_true",
+                    help="outline every object (auditing against the site)")
     args = ap.parse_args()
 
     _set_process_name()
@@ -137,7 +139,7 @@ def main():
         "x": args.scene_x, "y": args.scene_y, "zoom": args.zoom,
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
-        "layout": None,
+        "layout": None, "boxes": args.debug_boxes,
     }
     display = Gdk.Display.get_default()
 
@@ -233,7 +235,7 @@ def main():
             cam = cam_for(mx, my)
             hover = state["hover"] if state["interactive"] else None
             scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo,
-                       background=bg)
+                       background=bg, all_boxes=state["boxes"])
             return False
 
         def on_motion(_w, ev):
@@ -368,6 +370,10 @@ def main():
                 set_interactive(False)
             elif cmd == "refresh":
                 refresh_alignment()
+            elif cmd == "boxes":
+                state["boxes"] = not state["boxes"]
+                print(f"all boxes: {state['boxes']}", flush=True)
+                queue()
             elif cmd == "quit":
                 Gtk.main_quit()
             return True

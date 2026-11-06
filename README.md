@@ -101,6 +101,7 @@ python3 tools/parity_check.py # diff our boxes against the kiosk reference
 python3 tools/render_check.py t3l1   # draw boxes on real tile art
 python3 tools/slice_parity.py "1920x1080@0,0;1920x1080@1920,567"
                               # per-monitor slice must be byte-identical
+python3 tools/box_audit.py    # our boxes vs the site's own front-end algorithm
 ```
 
 ## How it works
@@ -149,7 +150,8 @@ app/     scene.py      tiles, camera, mask, object boxes
          align.py      hologram alignment GUI
 tools/   fetch_meta, rip_tiles, pack_frames, rip_hologram, downsample_holo,
          build_keyed, build_mask, ctl, install_shortcut,
-         decode_p, parity_check, render_check, slice_parity  (verification)
+         decode_p, parity_check, render_check, slice_parity,
+         box_audit  (verification)
 docs/    p-field-decoding.md, verification.md
 config/  holo_offsets.json (per-scene alignment), systemd unit
 ```

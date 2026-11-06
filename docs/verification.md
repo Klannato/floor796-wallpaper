@@ -133,3 +133,25 @@ and repaints. No rebuild is needed: the compositor re-anchors the surfaces
 itself, only the derived offsets were ever stale. Verified live by nudging an
 output 1 px with `cosmic-randr position` and restoring it — both directions
 logged, no `surface(s)` rebuild line in between.
+
+## Test 5 — boxes against the site's own algorithm
+
+The kiosk is a reference, not the authority. `tools/box_audit.py` reproduces
+what the live `front.*.js` bundle does when it turns `changelog.json` into hover
+boxes: vertices parsed by `parsePositionCode` (name -> row/col via
+`_buildAbstractMatrix`, anchored on the matrix's first cell), vertices outside
+their tile by more than 2 px dropped, fewer than 3 surviving vertices dropped,
+links containing `no-click` dropped, bbox of the rest.
+
+```bash
+python3 tools/box_audit.py        # BOX AUDIT OK, or the deltas
+```
+
+Result on the live data: 857 objects in the changelog, 843 boxes on both sides
+and **identical to the pixel**, 0 differing, 0 that the site has and we lack,
+14 that we have and the site drops (the teleporter pads and six room entries
+with fewer than three in-tile vertices).
+
+`tools/ctl.py boxes` toggles a faint outline on every object in the running
+wallpaper — the only way to see the whole box set without hovering each one.
+It is off by default: a wallpaper is not a debug view.

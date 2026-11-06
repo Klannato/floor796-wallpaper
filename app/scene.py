@@ -268,7 +268,7 @@ class Scene:
         return surf
 
     def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
-             anim=None, holo=None, background=None):
+             anim=None, holo=None, background=None, all_boxes=False):
         import cairo
         if background is not None:
             paint_cover(cr, background, view_w, view_h)
@@ -292,7 +292,8 @@ class Scene:
             holo.draw(cr, cam, view_w, view_h)
 
         if objs:
-            self._draw_boxes(cr, cam, view_w, view_h, hover)
+            self._draw_boxes(cr, cam, view_w, view_h, hover,
+                             all_boxes=all_boxes)
 
     def _paint_tiles(self, cr, cam, view_w, view_h, smooth, anim):
         import cairo
@@ -331,11 +332,26 @@ class Scene:
             cr.restore()
         cr.restore()
 
-    def _draw_boxes(self, cr, cam, view_w, view_h, hover):
+    def _draw_boxes(self, cr, cam, view_w, view_h, hover, all_boxes=False):
         """Only the hovered object is ever drawn.
 
         Everything else is invisible: this is a wallpaper, not a debug view.
+        `all_boxes` is the exception, for auditing against the site — a faint
+        outline on every object, opt-in through the `boxes` control command and
+        never on by default.
         """
+        if all_boxes:
+            z = cam.zoom
+            cr.save()
+            cr.set_line_width(1.0)
+            cr.set_source_rgba(1.0, 0.85, 0.2, 0.55)
+            for o in self.objects:
+                if o["link"] in MARKER_LINKS:
+                    continue
+                cr.rectangle((o["x1"] - cam.x) * z, (o["y1"] - cam.y) * z,
+                             (o["x2"] - o["x1"]) * z, (o["y2"] - o["y1"]) * z)
+                cr.stroke()
+            cr.restore()
         if not hover:
             return
         o = hover
