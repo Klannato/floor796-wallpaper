@@ -27,6 +27,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
+def _set_process_name(name="floor796-wall"):
+    """Make the process identifiable in task managers (comm is capped at 15)."""
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.prctl(15, name.encode()[:15], 0, 0, 0)   # PR_SET_NAME
+    except Exception:
+        pass
+
 from scene import Camera, Scene  # noqa: E402
 
 
@@ -44,6 +54,8 @@ def main():
     ap.add_argument("--mask", default=None,
                     help="silhouette PNG (white=keep, black=cut)")
     args = ap.parse_args()
+
+    _set_process_name()
 
     import gi
     gi.require_version("Gtk", "3.0")
