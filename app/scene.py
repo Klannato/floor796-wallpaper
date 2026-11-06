@@ -14,9 +14,6 @@ TILE_W, TILE_H = 1024, 820
 # one in the data; it must never produce a box or swallow a click.
 MARKER_LINKS = {"hologram-area"}
 
-ANIM_FRAME_W, ANIM_FRAME_H = 512, 410   # must match app/anim.py
-ANIM_COLS = 8
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
