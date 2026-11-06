@@ -178,7 +178,7 @@ class AnimSheets:
         self._used[key] = time.time()
         return surf
 
-    def prune(self, visible=(), budget=12):
+    def prune(self, visible=(), budget=48):
         """Drop mappings for tiles that are not on screen.
 
         Runs from the event loop, never during a paint: dropping a mapping
@@ -188,6 +188,9 @@ class AnimSheets:
         by timestamp alone thrashes whenever the view is full of tiles.
         """
         visible = set(visible)
+        # Off-screen tiles always go. On-screen ones are only dropped if they
+        # somehow exceed the budget — evicting a visible tile just makes it
+        # remap next frame and flicker between animated and static.
         drop = [k for k in self._maps if k[1] not in visible]
         if len(self._maps) - len(drop) > budget:
             drop += [k for k in sorted(self._maps,

@@ -63,6 +63,7 @@ class Scene:
                 self.tiles[tile["id"]] = (r, c, tile.get("preview", ""))
                 self.width = max(self.width, c * SPACING_W + TILE_W)
                 self.height = max(self.height, r * SPACING_H + TILE_H)
+        self.mask_path_set = False
         self.empty, self.content_bbox = self._content_index()
         # how much of each tile is flat backing; a mostly-empty tile loses its
         # animation so its opaque frames don't repaint the slab we keyed out
@@ -218,6 +219,7 @@ class Scene:
         """Load a hand-drawn silhouette: white = keep, black = cut."""
         import cairo
         self.mask_path = path
+        self.mask_path_set = True
         from PIL import Image
         im = Image.open(path).convert("L")
         # Full-res A8 is 66 MB of anonymous memory for a silhouette whose only
@@ -297,8 +299,12 @@ class Scene:
         for tid in self.visible_tiles(cam, view_w, view_h):
             if tid in self.empty:
                 continue          # void tile: let the wallpaper show through
-            animated = (anim is not None
-                        and self.keyed_pct.get(tid, 0) < self.anim_max_backing)
+            # With a silhouette mask the void is cut globally, so a mostly-void
+            # tile can animate too — without one, its frames would repaint the
+            # slab the colour key removed.
+            animated = anim is not None and (
+                self.mask_path_set
+                or self.keyed_pct.get(tid, 0) < self.anim_max_backing)
             frame = anim.frame_for(tid, cam.zoom) if animated else None
             surf = frame if frame is not None else self.surface(tid)
             if surf is None:

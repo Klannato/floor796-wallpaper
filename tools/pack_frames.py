@@ -32,7 +32,8 @@ SIZES = {256: (256, 205), 512: (512, 410), 1024: (1024, 820)}
 FRAME_W, FRAME_H = SIZES[512][0], SIZES[512][1]   # replaced by --size
 SHEET_COLS = 8                   # 8x8 grid: WebP refuses images >16383 px
 WORKERS = 4
-STATIC_THRESHOLD = 1.0           # mean abs diff below this => tile is static
+STATIC_THRESHOLD = 0.2           # mean abs diff below this => static
+                                 # (1.0 wrongly froze tiles with subtle motion)
 
 
 def pack(tid):
