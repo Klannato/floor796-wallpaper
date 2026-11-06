@@ -228,11 +228,19 @@ class Scene:
             cr.move_to(x + pad, y + pad + lh * (i + 0.8))
             cr.show_text(t)
 
-    def object_at(self, cam, px, py, radius=0):
+    def object_at(self, cam, px, py, radius=0, allow=None):
+        """Smallest object under the cursor, optionally limited to `allow`.
+
+        The filter is applied *before* picking, not afterwards: a rejected
+        object that happened to be smallest would otherwise win and then be
+        discarded, blocking whatever sits underneath it.
+        """
         sx, sy = cam.to_scene(px, py)
         best = None
         for o in self.objects:
             if o["x1"] <= sx <= o["x2"] and o["y1"] <= sy <= o["y2"]:
+                if allow is not None and not allow(o):
+                    continue
                 area = (o["x2"] - o["x1"]) * (o["y2"] - o["y1"])
                 if best is None or area < best[0]:
                     best = (area, o)
