@@ -106,6 +106,16 @@ def main():
                 area.queue_draw()
         return False
 
+    def gate_pad(o):
+        """A hologram pad only responds while its own scene is showing."""
+        if not o or holo is None:
+            return o
+        import links
+        idx = links.hologram_pad_index(o.get("link"))
+        if idx is None:
+            return o
+        return o if idx == holo.current_index() else None
+
     def refresh_alignment():
         """Re-read the hand-tuned hologram offsets and repaint."""
         got = holo.reload_offsets() if holo is not None else {}
@@ -153,6 +163,7 @@ def main():
                 return True
             cam = cam_for(mx, my)
             o = scene.object_at(cam, ev.x, ev.y)
+            o = gate_pad(o)
             if (o or {}).get("id") != (state["hover"] or {}).get("id"):
                 state["hover"] = o
                 queue()
@@ -163,7 +174,8 @@ def main():
                 return True
             state["drag"] = (ev.x, ev.y, state["x"], state["y"])
             state["press"] = (ev.x, ev.y)
-            state["hover"] = scene.object_at(cam_for(mx, my), ev.x, ev.y)
+            state["hover"] = gate_pad(
+                scene.object_at(cam_for(mx, my), ev.x, ev.y))
             return True
 
         def on_release(_w, ev, mx=mx, my=my):
@@ -175,11 +187,9 @@ def main():
             o = state.get("hover")
             if p0 and o and o.get("link") and (
                     abs(ev.x - p0[0]) + abs(ev.y - p0[1]) <= 4):
-                import subprocess
-                subprocess.Popen(["xdg-open", o["link"]],
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
-                print(f"opened {o['link']}", flush=True)
+                import links
+                links.resolve(o["link"], holo=holo)
+                queue()
             return True
 
         def on_scroll(_w, ev, mx=mx, my=my):

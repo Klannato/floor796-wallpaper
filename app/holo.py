@@ -38,6 +38,31 @@ GAP, FADE_IN, NORMAL, FADE_OUT = 12, 24, 60, 24
 CYCLE = GAP + FADE_IN + NORMAL + FADE_OUT      # 120 frames = 10 s
 
 
+def _phase_frame(phase):
+    if phase < GAP:
+        return 0
+    phase -= GAP
+    if phase < FADE_IN:
+        return min(N_FRAMES - 1, int(phase / FADE_IN * N_FRAMES))
+    phase -= FADE_IN
+    if phase < NORMAL:
+        return min(N_FRAMES - 1, phase)
+    return N_FRAMES - 1
+
+
+def _phase_alpha(phase):
+    if phase < GAP:
+        return 0.0
+    phase -= GAP
+    if phase < FADE_IN:
+        return phase / FADE_IN
+    phase -= FADE_IN
+    if phase < NORMAL:
+        return 1.0
+    phase -= NORMAL
+    return max(0.0, 1 - phase / FADE_OUT)
+
+
 class Hologram:
     def __init__(self, holo_dir=None):
         self.dir = holo_dir or DIR
@@ -48,6 +73,8 @@ class Hologram:
         # preview mode, used by the alignment tool
         self.preview_name = None
         self.preview_frame = None
+        # scene forced by clicking a pick-hologram pad: (index, t0)
+        self.forced = None
 
     # ── per-scene alignment offsets (hand-tuned in app/align.py) ────────────
     @staticmethod
@@ -114,7 +141,28 @@ class Hologram:
         self._cur = {key: (idx, surf)}     # one scene frame is enough
         return surf
 
+    def select(self, index, now=None):
+        """Select a hologram scene, as clicking a pad on the site does."""
+        names = self.scenes()
+        if not names:
+            return None
+        if not 0 <= index < len(names):
+            # changelog has pads 0..13 but only a handful of scenes are public
+            print(f"hologram scene {index} not available "
+                  f"({len(names)} ripped)", flush=True)
+            return None
+        self.forced = (index, now or time.time())
+        return names[index]
+
+    def clear_selection(self):
+        self.forced = None
+
     def state(self, now=None):
+        if self.forced is not None:
+            idx, t0 = self.forced
+            names = self.scenes()
+            phase = int(((now or time.time()) - t0) * FPS) % CYCLE
+            return names[idx % len(names)], _phase_frame(phase), _phase_alpha(phase)
         if self.preview_name is not None:
             idx = 0 if self.preview_frame is None else self.preview_frame
             return self.preview_name, idx, 1.0
@@ -123,19 +171,17 @@ class Hologram:
         if not names:
             return None, 0, 0.0
         t = int((now or time.time()) * FPS)
-        scene_no = t // CYCLE
         phase = t % CYCLE
-        name = names[scene_no % len(names)]
-        if phase < GAP:
-            return name, 0, 0.0
-        phase -= GAP
-        if phase < FADE_IN:
-            return name, min(N_FRAMES - 1, int(phase / FADE_IN * N_FRAMES)), phase / FADE_IN
-        phase -= FADE_IN
-        if phase < NORMAL:
-            return name, min(N_FRAMES - 1, phase), 1.0
-        phase -= NORMAL
-        return name, N_FRAMES - 1, max(0.0, 1 - phase / FADE_OUT)
+        name = names[(t // CYCLE) % len(names)]
+        return name, _phase_frame(phase), _phase_alpha(phase)
+
+    def current_index(self, now=None):
+        name = self.state(now)[0]
+        names = self.scenes()
+        try:
+            return names.index(name)
+        except ValueError:
+            return None
 
     def visible(self, cam, w, h):
         sx1, sy1 = cam.x + w / cam.zoom, cam.y + h / cam.zoom

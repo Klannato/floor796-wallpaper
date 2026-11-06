@@ -192,11 +192,9 @@ def run(args):
             return True
         moved = abs(ev.x - p[0]) + abs(ev.y - p[1])
         if moved <= 4 and o.get("link"):
-            import subprocess
-            subprocess.Popen(["xdg-open", o["link"]],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            print(f"opened {o['link']}", flush=True)
+            import links
+            links.resolve(o["link"], holo=state["holo"])
+            request_redraw()
         return True
 
     def on_motion(_w, ev):
