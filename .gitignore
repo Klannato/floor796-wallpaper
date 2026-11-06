@@ -4,3 +4,7 @@ assets/*.jpg
 verify/
 __pycache__/
 *.pyc
+
+# downloaded metadata (tools/fetch_meta.py writes the real copies to vendor/)
+/changelog.json
+/matrix.json

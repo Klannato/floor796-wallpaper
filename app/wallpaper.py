@@ -8,8 +8,9 @@ offset per monitor so the map stays continuous across the arrangement —
     scene_x_on_monitor_i = base_x + monitor_i.x / zoom
 
 The monitors are read from GDK at runtime (they are not the same as they were
-yesterday: the second screen moved from y=554 to y=278), and the list is rebuilt
-on hotplug.
+yesterday: the second screen moved from y=554 to y=278), the list is rebuilt on
+hotplug, and every geometry value is re-read per paint rather than captured —
+a reposition sends no hotplug signal, so anything cached here goes stale.
 
     /usr/bin/python3 app/wallpaper.py                 # wallpaper, no input
     /usr/bin/python3 app/wallpaper.py --interactive    # hover + click enabled
@@ -40,6 +41,37 @@ def _set_process_name(name="floor796-wall"):
 from scene import Camera, Scene  # noqa: E402
 
 
+# ── monitor geometry ──────────────────────────────────────────────────────────
+# Read, never keep. Re-arranging outputs in the compositor's display settings
+# moves a monitor without adding or removing one, and GDK signals only the
+# latter — so any geometry captured at build time silently goes stale and half
+# the map jumps by the delta. Every consumer below re-reads these.
+
+def mon_geom(mon):
+    """Live (x, y, w, h) of one monitor in layout coordinates."""
+    g = mon.get_geometry()
+    return g.x, g.y, g.width, g.height
+
+
+def layout_of(display):
+    """[(monitor, x, y, w, h)] for every output, read fresh on every call."""
+    return [(mon,) + mon_geom(mon)
+            for mon in (display.get_monitor(i)
+                        for i in range(display.get_n_monitors()))]
+
+
+def layout_key(layout):
+    """Hashable summary of an arrangement — what "the monitors moved" means."""
+    return tuple(entry[1:] for entry in layout)
+
+
+def layout_str(layout):
+    parts = " + ".join(f"{w}x{h}@{x},{y}" for _m, x, y, w, h in layout)
+    uw = max((x + w for _m, x, y, w, h in layout), default=0)
+    uh = max((y + h for _m, x, y, w, h in layout), default=0)
+    return f"{parts} (union {uw}x{uh})"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zoom", type=float, default=0.5)
@@ -64,6 +96,11 @@ def main():
     from gi.repository import Gtk, Gdk, GLib, GtkLayerShell
 
     scene = Scene()
+    # Logged because the object set silently depends on which changelog is in
+    # vendor/: 804 (the stale bundled copy) vs 857 (live). 53 objects become
+    # unhoverable and nothing else complains.
+    print(f"scene: {len(scene.tiles)} tiles, {len(scene.objects)} objects, "
+          f"{scene.width}x{scene.height}", flush=True)
     if args.mask:
         scene.load_mask(args.mask)
     bg = None
@@ -100,16 +137,9 @@ def main():
         "x": args.scene_x, "y": args.scene_y, "zoom": args.zoom,
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
+        "layout": None,
     }
     display = Gdk.Display.get_default()
-
-    def monitors():
-        out = []
-        for i in range(display.get_n_monitors()):
-            m = display.get_monitor(i)
-            g = m.get_geometry()
-            out.append((m, g.x, g.y, g.width, g.height))
-        return out
 
     def cam_for(mx, my):
         """Camera for a monitor whose top-left is at (mx,my) in layout coords."""
@@ -120,7 +150,7 @@ def main():
     def set_interactive(on):
         import cairo as _c
         state["interactive"] = on
-        for win, _mon, _mx, _my, _w, _h in state["wins"]:
+        for win, _mon in state["wins"]:
             if on:
                 win.input_shape_combine_region(None)
             else:
@@ -166,7 +196,7 @@ def main():
         print(f"alignment refreshed: {len(got)} scene offset(s)", flush=True)
         queue()
 
-    def make_window(mon, mx, my, w, h):
+    def make_window(mon):
         win = Gtk.Window()
         win.set_app_paintable(True)
         vis = win.get_screen().get_rgba_visual()
@@ -189,16 +219,27 @@ def main():
         area = Gtk.DrawingArea()
         win.add(area)
 
-        def on_draw(_w, cr, mx=mx, my=my, w=w, h=h):
+        def view_size():
+            """What the surface actually is right now, not what it was at build."""
+            w = area.get_allocated_width()
+            h = area.get_allocated_height()
+            if w <= 1 or h <= 1:          # not realised yet
+                _mx, _my, w, h = mon_geom(mon)
+            return w, h
+
+        def on_draw(_w, cr):
+            mx, my, _gw, _gh = mon_geom(mon)
+            w, h = view_size()
             cam = cam_for(mx, my)
             hover = state["hover"] if state["interactive"] else None
             scene.draw(cr, cam, w, h, hover=hover, anim=anim, holo=holo,
                        background=bg)
             return False
 
-        def on_motion(_w, ev, mx=mx, my=my):
+        def on_motion(_w, ev):
             if not state["interactive"]:
                 return True
+            mx, my, _gw, _gh = mon_geom(mon)
             if state["drag"]:
                 x0, y0, bx, by = state["drag"]
                 state["x"] = bx - (ev.x - x0) / state["zoom"]
@@ -212,16 +253,17 @@ def main():
                 queue()
             return True
 
-        def on_press(_w, ev, mx=mx, my=my, w=w):
+        def on_press(_w, ev):
             if not state["interactive"] or ev.button != 1:
                 return True
+            mx, my, _gw, _gh = mon_geom(mon)
             state["drag"] = (ev.x, ev.y, state["x"], state["y"])
             state["press"] = (ev.x, ev.y)
             state["hover"] = scene.object_at(
                 cam_for(mx, my), ev.x, ev.y, allow=pad_allowed)
             return True
 
-        def on_release(_w, ev, mx=mx, my=my):
+        def on_release(_w, ev):
             if ev.button != 1:
                 return True
             state["drag"] = None
@@ -235,9 +277,10 @@ def main():
                 queue()
             return True
 
-        def on_scroll(_w, ev, mx=mx, my=my):
+        def on_scroll(_w, ev):
             if not state["interactive"]:
                 return True
+            mx, my, _gw, _gh = mon_geom(mon)
             g = ev.direction
             factor = (1.15 if g == Gdk.ScrollDirection.UP
                       else 1 / 1.15)
@@ -264,19 +307,38 @@ def main():
         return win
 
     def rebuild(*_):
-        for win, *_ in state["wins"]:
+        for win, _mon in state["wins"]:
             win.destroy()
         state["wins"] = []
-        mons = monitors()
-        for mon, mx, my, w, h in mons:
-            win = make_window(mon, mx, my, w, h)
-            state["wins"].append((win, mon, mx, my, w, h))
-        xs = [m[1] + m[3] for m in mons]
-        ys = [m[2] + m[4] for m in mons]
-        print(f"{len(mons)} surface(s), layout "
-              f"{max(xs)}x{max(ys)} at zoom {state['zoom']}, "
+        layout = layout_of(display)
+        for mon, _mx, _my, _w, _h in layout:
+            state["wins"].append((make_window(mon), mon))
+        state["layout"] = layout_key(layout)
+        print(f"{len(layout)} surface(s), layout {layout_str(layout)} "
+              f"at zoom {state['zoom']}, "
               f"scene origin ({state['x']:.0f},{state['y']:.0f})", flush=True)
         set_interactive(state["interactive"])
+
+    def check_layout():
+        """Catch a rearranged arrangement that raised no add/remove signal.
+
+        Surfaces are re-anchored by the compositor on its own; only the camera
+        offsets and viewport sizes are derived here, and they are now read live
+        — so a move needs a repaint and a log line, not a rebuild.
+        """
+        layout = layout_of(display)
+        key = layout_key(layout)
+        if key == state["layout"]:
+            return
+        old, state["layout"] = state["layout"], key
+        print(f"layout changed: {layout_str(layout)}", flush=True)
+        for (win, mon), was in zip(state["wins"], old or ()):
+            g = mon_geom(mon)
+            if g != was:
+                print(f"  {(mon.get_model() or 'output')}: "
+                      f"{was[2]}x{was[3]}@{was[0]},{was[1]}"
+                      f" → {g[2]}x{g[3]}@{g[0]},{g[1]}", flush=True)
+        queue()
 
     display.connect("monitor-added", rebuild)
     display.connect("monitor-removed", rebuild)
@@ -322,9 +384,11 @@ def main():
             # between paints, not inside one. Every monitor contributes, since
             # each has its own camera offset.
             vis = set()
-            for _win, _mon, mx, my, w, h in state["wins"]:
+            for _win, mon in state["wins"]:
+                mx, my, w, h = mon_geom(mon)
                 vis.update(scene.visible_tiles(cam_for(mx, my), w, h))
             anim.prune(vis)
+        check_layout()
         return True
 
     GLib.timeout_add(100, tick)

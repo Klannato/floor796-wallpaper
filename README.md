@@ -96,9 +96,11 @@ In interactive mode:
 ```bash
 app/viewer.py                 # windowed explorer, same renderer, always interactive
 app/align.py                  # GUI to hand-align the six hologram scenes
-python3 tools/decode_p.py     # verify p-field decoding (all 804 objects)
+python3 tools/decode_p.py     # verify p-field decoding (all 857 objects)
 python3 tools/parity_check.py # diff our boxes against the kiosk reference
 python3 tools/render_check.py t3l1   # draw boxes on real tile art
+python3 tools/slice_parity.py "1920x1080@0,0;1920x1080@1920,567"
+                              # per-monitor slice must be byte-identical
 ```
 
 ## How it works
@@ -147,15 +149,13 @@ app/     scene.py      tiles, camera, mask, object boxes
          align.py      hologram alignment GUI
 tools/   fetch_meta, rip_tiles, pack_frames, rip_hologram, downsample_holo,
          build_keyed, build_mask, ctl, install_shortcut,
-         decode_p, parity_check, render_check  (verification)
-docs/    p-field-decoding.md, verification.md, environment.md
+         decode_p, parity_check, render_check, slice_parity  (verification)
+docs/    p-field-decoding.md, verification.md
 config/  holo_offsets.json (per-scene alignment), systemd unit
 ```
 
 ## Known limitations
 
-- A monitor rearrangement that adds or removes no output is not signalled, so the
-  per-monitor camera offset can go stale until restart.
 - 13 of the 20 hologram pads in the data have no public scene recording; clicking
   one logs "scene N not available" rather than doing something wrong.
 - Boxes are the bounding hull of the site's own polygon points, so they can be

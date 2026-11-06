@@ -81,6 +81,7 @@ Prefer the **live** changelog: the bundled copy is 53 objects stale.
 python3 tools/decode_p.py                       # parse all, print summary
 python3 tools/parity_check.py                   # diff vs kiosk reference code
 python3 tools/render_check.py t3l1 t1r1         # draw boxes on real tile art
+python3 tools/slice_parity.py "1920x1080@0,0;1920x1080@1920,567"
 ```
 
 `parity_check.py` needs no pygame: the kiosk's module-level `import pygame`
@@ -97,3 +98,38 @@ kiosk.
 
 **Do not "fix" the overlap** by cropping tiles to 1016×812 — that would shift
 every object by up to 8 px per tile and destroy the 804/804 parity above.
+
+## Test 4 — the multi-monitor split
+
+Layer surfaces are per-output, so the map is drawn once per monitor with the
+shared camera offset by `monitor.x / zoom` (`/zoom`, not `*zoom`). The evidence
+that the divisor is right is byte equality, not a glance: render the union once,
+render each monitor's slice with its offset camera, and compare bytes.
+
+```bash
+python3 tools/slice_parity.py "1920x1080@0,0;1920x1080@1920,567"
+python3 tools/slice_parity.py "1920x1080@-1920,0;1920x1080@0,300"
+python3 tools/slice_parity.py "2560x1440@0,-200;1080x1920@2560,240"
+```
+
+Each run also re-checks the same arrangement shifted by 200 px, because a
+cached offset is exactly what breaks a move. Expected: every slice
+`BYTE-IDENTICAL` and `SLICE PARITY OK`.
+
+**Geometry is read, never cached.** GDK signals only `monitor-added` /
+`monitor-removed`; dragging a panel to a new position in the compositor's
+display settings sends neither, so any geometry captured when the window was
+built goes stale and half the map jumps by the delta. `app/wallpaper.py`
+therefore re-reads `Gdk.Monitor.get_geometry()` in every draw/input handler and
+viewport size from the area allocation, and the 100 ms tick compares the
+arrangement against the one it last drew — a move logs
+
+```
+layout changed: 1920x1080@1921,567 + 1920x1080@0,0 (union 3841x1647)
+  Acer H236HL: 1920x1080@1920,567 → 1920x1080@1921,567
+```
+
+and repaints. No rebuild is needed: the compositor re-anchors the surfaces
+itself, only the derived offsets were ever stale. Verified live by nudging an
+output 1 px with `cosmic-randr position` and restoring it — both directions
+logged, no `surface(s)` rebuild line in between.
