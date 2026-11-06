@@ -34,6 +34,7 @@ def run(args):
         if args.camera else Camera()
     state = {"hover": None, "drag": None, "size": (args.width, args.height),
              "dirty": False, "anim": None, "holo": None,
+             "press": None, "cand": None,
              "interactive": args.interactive}
     if not args.no_animate:
         from anim import AnimSheets
@@ -174,18 +175,28 @@ def run(args):
     def on_press(_w, ev):
         if ev.button == 1:
             state["drag"] = (ev.x, ev.y, cam.x, cam.y)
-            if state["interactive"]:
-                o = scene.object_at(cam, ev.x, ev.y)
-                if o and o.get("link"):
-                    import subprocess
-                    subprocess.Popen(["xdg-open", o["link"]],
-                                     stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL)
-                    print(f"opened {o['link']}", flush=True)
+            # Remember the candidate and where the press happened; a release
+            # that moved is a pan, not a click.
+            state["press"] = (ev.x, ev.y)
+            state["cand"] = (scene.object_at(cam, ev.x, ev.y)
+                             if state["interactive"] else None)
         return True
 
     def on_release(_w, ev):
+        p = state.get("press")
+        o = state.get("cand")
         state["drag"] = None
+        state["press"] = None
+        state["cand"] = None
+        if ev.button != 1 or not p or not o:
+            return True
+        moved = abs(ev.x - p[0]) + abs(ev.y - p[1])
+        if moved <= 4 and o.get("link"):
+            import subprocess
+            subprocess.Popen(["xdg-open", o["link"]],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            print(f"opened {o['link']}", flush=True)
         return True
 
     def on_motion(_w, ev):
