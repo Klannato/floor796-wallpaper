@@ -145,7 +145,7 @@ class Scene:
                 yield tid
 
     def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
-             anim=None):
+             anim=None, holo=None):
         import cairo
         cr.set_source_rgb(0.02, 0.02, 0.03)
         cr.paint()
@@ -175,6 +175,9 @@ class Scene:
             cr.paint()
             cr.restore()
         cr.restore()
+
+        if holo is not None:
+            holo.draw(cr, cam, view_w, view_h)
 
         if objs:
             self._draw_boxes(cr, cam, view_w, view_h, hover)

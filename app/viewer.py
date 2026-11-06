@@ -32,10 +32,12 @@ def run(args):
     cam = Camera(*[float(v) for v in args.camera.split(",")]) \
         if args.camera else Camera()
     state = {"hover": None, "drag": None, "size": (args.width, args.height),
-             "dirty": False, "anim": None}
+             "dirty": False, "anim": None, "holo": None}
     if not args.no_animate:
         from anim import AnimSheets
+        from holo import Hologram
         state["anim"] = AnimSheets()
+        state["holo"] = Hologram()
 
     win = Gtk.Window()
     win.set_title("floor796")
@@ -69,7 +71,7 @@ def run(args):
     def on_draw(_w, cr):
         w, h = state["size"]
         scene.draw(cr, cam, w, h, hover=state["hover"], smooth=args.smooth,
-                   anim=state["anim"])
+                   anim=state["anim"], holo=state["holo"])
         hud(cr, w, h, cam, scene)
         return False
 
@@ -92,7 +94,7 @@ def run(args):
         pool = state["anim"]
         if pool is None:
             return True
-        if pool.live:
+        if pool.live or state["holo"] is not None:
             request_redraw()
         return True
 

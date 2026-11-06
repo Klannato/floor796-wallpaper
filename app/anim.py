@@ -79,8 +79,6 @@ class AnimSheets:
         key = (size, tid)
         mv = self._maps.get(key)
         if mv is not None:
-            self._order.remove(key)
-            self._order.append(key)
             return mv
         if key in self._missing:
             return None
@@ -97,12 +95,10 @@ class AnimSheets:
             return None
         mv = memoryview(m)     # slicing the mmap itself gives read-only bytes
         self._maps[key] = mv
-        self._order.append(key)
-        while len(self._order) > MAP_BUDGET:
-            old = self._order.pop(0)
-            if old != key:
-                self._maps.pop(old, None)
-                self._cur.pop(old, None)
+        # Deliberately never evicted. Dropping the view while a cairo surface
+        # still points into it is a use-after-free (it segfaults the renderer
+        # a few seconds later). An idle mapping costs an fd; its pages are page
+        # cache the kernel can reclaim, so there is nothing to win by evicting.
         return mv
 
     # ── on-demand hi-res packing ───────────────────────────────────────────
@@ -165,7 +161,9 @@ class AnimSheets:
         off = idx * fb
         surf = cairo.ImageSurface.create_for_data(
             mv[off:off + fb], cairo.FORMAT_ARGB32, fw, fh, fw * 4)
-        self._cur[key] = (idx, surf)
+        # Pin the memoryview alongside the surface: cairo reads straight out of
+        # that buffer, so it must outlive the surface.
+        self._cur[key] = (idx, surf, mv)
         return surf
 
     @property
