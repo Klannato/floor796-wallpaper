@@ -85,3 +85,18 @@ python3 tools/render_check.py t3l1 t1r1         # draw boxes on real tile art
 
 `parity_check.py` needs no pygame: the kiosk's module-level `import pygame`
 is stubbed out because `load_objects()` never touches it.
+
+## Test 3 — tile compositing
+
+`tools/build_still.py` downloads all 110 tile previews from the CDN and pastes
+them at `col*1016, row*812` → a **10168 × 8940** whole-scene still in ~15 s,
+optionally with all 804 boxes drawn.
+
+The 8 px overlap strips are *not* pixel-identical between neighbouring tiles
+(mean luma disagreement 3–11 out of 255 on those 8 columns). That is a
+hand-authoring artifact in the source art, not a compositing bug: at 1:1 zoom
+the join is invisible, and paste order (later tile wins, i.e. the painter's
+order a browser uses) matches both the site and the kiosk.
+
+**Do not "fix" the overlap** by cropping tiles to 1016×812 — that would shift
+every object by up to 8 px per tile and destroy the 804/804 parity above.
