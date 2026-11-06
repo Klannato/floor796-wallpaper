@@ -15,6 +15,7 @@ Controls: drag = pan, wheel = zoom at cursor, arrows/WASD = pan,
 
 import argparse
 import os
+import socket
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -106,6 +107,41 @@ def run(args):
                 _c.Region(_c.RectangleInt(0, 0, 0, 0)))
         print(f"interactive: {on}", flush=True)
         request_redraw()
+
+    # ── control socket ─────────────────────────────────────────────────────
+    # A wallpaper in click-through mode never receives keyboard focus, so the
+    # hotkey has to come from outside: a global shortcut runs tools/ctl.py,
+    # which drops a datagram here.
+    ctl_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"),
+                            "floor796.sock")
+    try:
+        if os.path.exists(ctl_path):
+            os.unlink(ctl_path)
+        ctl = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        ctl.bind(ctl_path)
+        ctl.setblocking(False)
+
+        def on_ctl(_fd, _cond):
+            try:
+                data, _ = ctl.recvfrom(128)
+            except OSError:
+                return True
+            cmd = data.decode().strip().lower()
+            print(f"ctl: {cmd}", flush=True)
+            if cmd == "toggle":
+                set_interactive(not state["interactive"])
+            elif cmd == "interactive":
+                set_interactive(True)
+            elif cmd == "wallpaper":
+                set_interactive(False)
+            elif cmd == "quit":
+                Gtk.main_quit()
+            return True
+
+        GLib.io_add_watch(ctl.fileno(), GLib.PRIORITY_DEFAULT, GLib.IO_IN, on_ctl)
+        print(f"control socket: {ctl_path}", flush=True)
+    except OSError as e:
+        print(f"control socket unavailable: {e}", flush=True)
 
     def tick():
         """Prefetch neighbour sheets, then repaint animated tiles."""
