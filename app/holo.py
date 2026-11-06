@@ -59,6 +59,11 @@ class Hologram:
         except Exception:
             return {}
 
+    def reload_offsets(self):
+        """Re-read config/holo_offsets.json (after hand alignment)."""
+        self.offsets = self._load_offsets()
+        return self.offsets
+
     def save_offsets(self):
         import json
         os.makedirs(os.path.dirname(OFFSETS_PATH), exist_ok=True)
