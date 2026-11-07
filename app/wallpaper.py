@@ -129,20 +129,23 @@ def main():
         else:
             print(f"backdrop missing: {bg_path}", flush=True)
 
-    anim = holo = addons = None
+    anim = holo = addons = cover = None
     if not args.no_animate:
         from addons import Addons
         from anim import AnimSheets
+        from cover import CoverWatcher
         from holo import Hologram
         anim = AnimSheets()
         holo = Hologram()
         addons = Addons()
+        cover = CoverWatcher().start()
 
     state = {
         "x": args.scene_x, "y": args.scene_y, "zoom": args.zoom,
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
         "layout": None, "boxes": args.debug_boxes, "addon_sig": (),
+        "next_covered_frame": 0.0,
     }
     display = Gdk.Display.get_default()
 
@@ -405,6 +408,17 @@ def main():
         print(f"control socket unavailable: {e}", flush=True)
 
     def tick():
+        # A covered wallpaper is invisible: one frame per second is plenty, and
+        # it cuts both the compositing and the present cost by ~12x. The state
+        # comes from the compositor (maximized/fullscreen toplevels), so this
+        # happens the moment a window covers the screen. The addon frame index
+        # therefore advances slowly too, which is exactly right — nobody sees it.
+        if cover is not None and cover.covered:
+            now = time.monotonic()
+            if now >= state["next_covered_frame"]:
+                state["next_covered_frame"] = now + 1.0
+                queue()
+            return True
         if addons is not None and addons.items:
             # Repaint only when an addon frame actually changed: queuing
             # unconditionally at 10 Hz costs a quarter of a core on a scene

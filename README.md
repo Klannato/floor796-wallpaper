@@ -161,6 +161,21 @@ docs/    p-field-decoding.md, verification.md, interactions.md
 config/  holo_offsets.json (per-scene alignment), systemd unit
 ```
 
+## Idle behaviour
+
+A wallpaper nobody can see does not need 12 frames per second. Wayland has no
+"am I occluded" query for a layer-shell client, but COSMIC publishes
+`zcosmic_toplevel_info_v1`, so `app/toplevel_probe.c` reports whether any
+toplevel is maximized or fullscreen and the wallpaper drops to 1 fps while it is.
+
+```bash
+tools/build_probe.sh          # needs gcc + wayland-client headers; optional
+```
+
+Measured on two 1080p outputs: 15.3 % of one core uncovered, 1.1 % covered.
+Without the probe (not built, or the protocol absent) the wallpaper simply keeps
+animating — the fallback is always "full rate", never "stuck throttled".
+
 ## Known limitations
 
 - 13 of the 20 hologram pads in the data have no public scene recording; clicking
