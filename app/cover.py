@@ -22,12 +22,23 @@ PROBE = os.path.join(ROOT, "vendor", "bin", "toplevel_probe")
 
 
 class CoverWatcher:
+    """Which outputs have a maximized/fullscreen window on them.
+
+    Lines look like `covered 1920 554 1920 1080` / `clear 0 0 1920 1080`, in the
+    same layout coordinates Gdk reports monitor geometry in — so the wallpaper
+    can throttle one monitor and leave the visible one at full rate.
+    """
+
     def __init__(self, binary=PROBE):
         self.binary = binary
-        self.covered = False
+        self.covered = False          # any output covered
+        self.rects = {}               # (x, y, w, h) -> bool
         self._proc = None
         self._thread = None
         self.ok = False
+
+    def covers(self, x, y, w, h):
+        return bool(self.rects.get((int(x), int(y), int(w), int(h)), False))
 
     def start(self):
         if not (os.path.isfile(self.binary) and os.access(self.binary, os.X_OK)):
@@ -51,16 +62,24 @@ class CoverWatcher:
         if stream is None:
             return
         for line in stream:
-            line = line.strip()
-            if line.startswith("covered "):
-                was = self.covered
-                self.covered = line.split()[1] == "1"
-                if self.covered != was:
-                    print(f"screen: {'covered' if self.covered else 'clear'}"
-                          f" — {'throttling to 1 fps' if self.covered else 'full rate'}",
-                          flush=True)
+            parts = line.split()
+            if len(parts) != 5 or parts[0] not in ("covered", "clear"):
+                continue
+            try:
+                rect = tuple(int(v) for v in parts[1:])
+            except ValueError:
+                continue
+            before = self.rects.get(rect)
+            covered = parts[0] == "covered"
+            self.rects[rect] = covered
+            self.covered = any(self.rects.values())
+            if before is not covered:
+                print(f"output {rect[2]}x{rect[3]}@{rect[0]},{rect[1]}: "
+                      f"{'covered (1 fps)' if covered else 'clear (full rate)'}",
+                      flush=True)
         # Probe died (compositor restart, crash): fall back to full rate rather
         # than staying throttled forever behind a window that may be gone.
+        self.rects.clear()
         self.covered = False
         self.ok = False
         print("cover watcher: probe exited, full rate", flush=True)

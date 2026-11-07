@@ -145,7 +145,7 @@ def main():
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
         "layout": None, "boxes": args.debug_boxes, "addon_sig": (),
-        "next_covered_frame": 0.0,
+        "covered_next": {},
     }
     display = Gdk.Display.get_default()
 
@@ -408,35 +408,38 @@ def main():
         print(f"control socket unavailable: {e}", flush=True)
 
     def tick():
-        # A covered wallpaper is invisible: one frame per second is plenty, and
-        # it cuts both the compositing and the present cost by ~12x. The state
-        # comes from the compositor (maximized/fullscreen toplevels), so this
-        # happens the moment a window covers the screen. The addon frame index
-        # therefore advances slowly too, which is exactly right — nobody sees it.
-        if cover is not None and cover.covered:
-            now = time.monotonic()
-            if now >= state["next_covered_frame"]:
-                state["next_covered_frame"] = now + 1.0
-                queue()
-            return True
+        # Per monitor, not globally: two screens with one maximized window over
+        # the left one must not slow the right one down. A covered output is
+        # invisible, so one frame per second is plenty there.
+        now = time.monotonic()
+        sig_changed = False
         if addons is not None and addons.items:
-            # Repaint only when an addon frame actually changed: queuing
-            # unconditionally at 10 Hz costs a quarter of a core on a scene
-            # where nothing moved.
-            sig = addons.signature(time.monotonic())
+            sig = addons.signature(now)
             if sig != state["addon_sig"]:
                 state["addon_sig"] = sig
-                queue()
+                sig_changed = True
         if anim is not None and anim.live:
-            queue()
-            # Release frame mappings for tiles off screen. Safe here: this runs
-            # between paints, not inside one. Every monitor contributes, since
-            # each has its own camera offset.
-            vis = set()
-            for _win, mon in state["wins"]:
-                mx, my, w, h = mon_geom(mon)
-                vis.update(scene.visible_tiles(cam_for(mx, my), w, h))
-            anim.prune(vis)
+            sig_changed = True
+
+        visible = set()
+        for win, mon in state["wins"]:
+            geom = mon_geom(mon)
+            covered = cover is not None and cover.covers(*geom)
+            if covered:
+                due = state["covered_next"].get(geom, 0.0)
+                if now < due:
+                    continue                      # this output stays at 1 fps
+                state["covered_next"][geom] = now + 1.0
+            elif not sig_changed:
+                continue                          # nothing on it changed
+            area = win.get_child()
+            if area is not None:
+                area.queue_draw()
+            if not covered:
+                visible.update(scene.visible_tiles(cam_for(geom[0], geom[1]),
+                                                   geom[2], geom[3]))
+        if anim is not None and anim.live and visible:
+            anim.prune(visible)
         check_layout()
         return True
 
