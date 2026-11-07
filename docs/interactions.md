@@ -28,8 +28,8 @@ Ripped so far (`vendor/addons/manifest.json` — 12 clips, 26 MB, lossless WebP)
 
 | addon | clips | behaviour |
 |---|---|---|
-| teleport-room | 8 × 60f @ 289×412 | the eight characters dance on the pad; one character per 5 s loop, a click advances now |
-| cemetery-fog | 1 × 60f @ 85×73 | loops in the cemetery, always on |
+| teleport-room | 8 × 60f @ 289×412 | the eight characters cycle, one per 5 s; each clip fades in/out over 10 frames so the swap happens while the pad is empty (a bare swap repainted the whole room and read as a flash); a click advances now |
+| cemetery-fog | 60f @ 1211×1097 | baked plume: the 85×73 clip is a fog sprite tiled 6×5 along diagonals and masked by `mask.webp`, exactly as `render.js` does it |
 | where-is-waldo | 1 × 60f @ 89×77 | one shot on click — Waldo appears in full and waves |
 | meg | 1 × 60f @ 143×111 | one shot on click |
 | banksy | 1 × 60f @ 53×128 | one shot on click |

@@ -89,6 +89,12 @@ class Addon:
         self.order = sorted(self.clips, key=lambda k: (len(k), k))
         self.current = self.order[0] if self.order else None
         self.started = None          # monotonic time of a one-shot
+        # A multi-clip addon (the teleporter's 8 characters) cycles, but it must
+        # not hard-cut: each clip is a full opaque recording of the room, so a
+        # bare swap repaints the whole pad. Fading the edge frames in and out
+        # reads as materialising, which is what the room is for.
+        self.cycle = entry.get("cycle", len(self.clips) > 1)
+        self.fade = entry.get("fade", 10) if self.cycle else 0
 
     def active(self):
         return self.trigger == "always" or self.started is not None
@@ -110,11 +116,23 @@ class Addon:
             return el % self.clips[self.current].frames if self.current else None
         if self.trigger != "always":
             return None
-        # The site holds one selection until you pick another, and a clip that
-        # swaps itself every loop reads as a slow flash on a wallpaper.
         if self.current is None:
             return None
-        return int(now * FPS) % self.clips[self.current].frames
+        t = int(now * FPS)
+        frames = self.clips[self.current].frames
+        if self.cycle:
+            key = self.order[(t // frames) % len(self.order)]
+            if key != self.current:
+                self.clips[self.current].drop()
+                self.current = key
+        return t % frames
+
+    def alpha(self, i):
+        """Fade the first and last `fade` frames of a cycling clip."""
+        if not self.fade or self.current is None:
+            return 1.0
+        n = self.clips[self.current].frames
+        return max(0.0, min(1.0, i / self.fade, (n - 1 - i) / self.fade))
 
 
 class Addons:
@@ -215,7 +233,11 @@ class Addons:
             cr.scale(z, z)
             cr.set_source_surface(surf, 0, 0)
             cr.get_source().set_filter(cairo.FILTER_NEAREST)
-            cr.paint()
+            a_alpha = a.alpha(i)
+            if a_alpha >= 0.999:
+                cr.paint()
+            else:
+                cr.paint_with_alpha(a_alpha)
             cr.restore()
 
 
