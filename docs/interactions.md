@@ -60,6 +60,22 @@ duration, clip URL). The remaining clip-based ones — `jaws19`, `naruto`,
 their own JS: chuck needs `hand.png` + `cracks.png` + `punch.mp3` (all public)
 and a small reimplementation; the rest are better opened as pages.
 
+## Interactive pages: routed by payload, not by scheme
+
+`interactive://` is 15 objects, and only some are apps. `app/pages.py` holds one
+table — page → lightest thing that can show it:
+
+| route | pages | cost |
+|---|---|---|
+| in-app image window | Mr. Bean (`mrbean.webp` 0.7 MB), Memorial Plaque (`plaque-en.webp` 0.1 MB), Change My Mind (`change-my-mind.jpg` 0.3 MB) | no extra process |
+| `ffplay` (already installed) | Camera in the shower (`shower-cam.mp4` 0.6 MB, looped, muted like the site) | ~40 MB while open |
+| WebKit child (`app/webview.py`) | Racer-796, three quests, fun-drawing, melody, payphone, lab panels | ~230 MB while open, one process, Escape closes |
+| browser | Visitors Statistics (loads the site's whole `app.js` bundle) | browser |
+
+The WebKit route is a child process because WebKit 6 is a GTK4 namespace and the
+wallpaper is GTK3; a process loads one GTK. Unlisted pages try WebKit, then the
+browser. `python3 app/pages.py --list` prints the table.
+
 ## Partial (8) — teleport pads
 
 `event://pick-teleport-N||no-click||https://…jpg` — the reference still opens and

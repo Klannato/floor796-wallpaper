@@ -93,6 +93,24 @@ ADAPTERS = {
         "point": "t2r4,423,10", "offset": (0, 0), "clip": [],
         "files": {"banksy": "/interactive/banksy/1793467437.f796.br"},
     },
+    "jaws19": {
+        "width": 123, "height": 153, "duration": 56, "trigger": "event",
+        "isolate": True,
+        "point": "b2l4,799,531", "offset": (9, -9), "clip": [],
+        "files": {"jaws": "/interactive/jaws19/1713214674.f796.br"},
+    },
+    "naruto": {
+        "width": 113, "height": 134, "duration": 42, "trigger": "event",
+        "isolate": True,
+        "point": "t2l4,682,647", "offset": (0, 0), "clip": [],
+        "files": {"jutsu": "/interactive/naruto/1749812703.f796.br"},
+    },
+    "cable": {
+        "width": 49, "height": 122, "duration": 60, "trigger": "event",
+        "isolate": True,
+        "point": "t3r1,63,709", "offset": (-15, 19), "clip": [],
+        "files": {"cable": "/interactive/quest-tuner/cable.f796.br"},
+    },
 }
 
 

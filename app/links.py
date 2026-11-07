@@ -99,9 +99,16 @@ def _part(part, holo, addons=None, title=""):
     if part.startswith("interactive://"):
         # Served under /interactive/; without the prefix every page 404s,
         # which looks exactly like "the shower cam is broken".
-        url = INTERACTIVE + part[len("interactive://"):].lstrip("/")
-        # A real web app (video, a game) belongs in an external program, not
-        # squeezed into the wallpaper process.
+        rel = part[len("interactive://"):].lstrip("/")
+        url = INTERACTIVE + rel
+        # Route by payload: plain images and short videos stay in-app (or in
+        # ffplay), only real canvas apps pay for a WebKit process, and the
+        # statistics page — which pulls the site's whole bundle — a browser.
+        try:
+            import pages
+            return pages.show(rel, title)
+        except Exception as e:
+            print(f"page routing failed ({e}); opening in browser", flush=True)
         _open(url)
         return "interactive page"
 

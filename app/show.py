@@ -18,12 +18,14 @@ with Escape, a click, or the close button.
 
 import hashlib
 import os
+import subprocess
 import sys
 import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "vendor", "links")
 _win_refs = []          # keep windows alive; GTK does not own them for us
+_video_refs = []        # ffplay children, reaped on the next open
 
 
 def _cached(url):
@@ -97,6 +99,31 @@ def show_image(url, title="", max_frac=0.8):
     _win_refs.append(win)
     threading.Thread(target=worker, daemon=True).start()
     return win
+
+
+def show_video(url, title=""):
+    """Play a short video in ffplay (already installed; ~40 MB while open)."""
+    if not _which("ffplay"):
+        return False
+    cmd = ["ffplay", "-loop", "0", "-an", "-loglevel", "quiet",
+           "-window_title", title or "floor796", url]
+    _video_refs[:] = [p for p in _video_refs if p.poll() is None]
+    try:
+        _video_refs.append(subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    except OSError as e:
+        print(f"show_video: {e}", flush=True)
+        return False
+    print(f"video window: {url}", flush=True)
+    return True
+
+
+def _which(name):
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
 
 
 if __name__ == "__main__":

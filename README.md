@@ -149,6 +149,10 @@ app/     scene.py      tiles, camera, mask, object boxes
          wallpaper.py  multi-monitor layer-shell host (the product)
          viewer.py     windowed explorer
          align.py      hologram alignment GUI
+         addons.py     ripped addon clips (teleporter, fog, one-shots)
+         pages.py      interactive:// page routing (image / ffplay / webkit / browser)
+         show.py       in-app image window; ffplay video window
+         webview.py    GTK4+WebKit child used by pages.py
 tools/   fetch_meta, rip_tiles, pack_frames, rip_hologram, downsample_holo,
          build_keyed, build_mask, ctl, install_shortcut,
          decode_p, parity_check, render_check, slice_parity,
