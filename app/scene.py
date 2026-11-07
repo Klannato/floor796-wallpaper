@@ -7,6 +7,7 @@ both the headless renderer and the interactive viewer.
 
 import json
 import os
+from collections import OrderedDict
 
 SPACING_W, SPACING_H = 1016, 812
 TILE_W, TILE_H = 1024, 820
@@ -75,6 +76,13 @@ class Scene:
         self._surface_order = []
         self.surface_budget = 16  # ~3.4 MB per tile => ~55 MB cap; a
                                   # viewport covers ~12 tiles at 0.5 zoom
+        # Keep each monitor's static layers instead of replacing one cache entry
+        # with the other monitor's camera every frame. Bound all viewport caches
+        # so dragging, resizing and hotplug cannot retain old full-screen images.
+        self._mask_cache = OrderedDict()
+        self._background_cache = OrderedDict()
+        self._tile_targets = OrderedDict()
+        self.viewport_cache_budget = 4
 
     def _content_index(self):
         """Tiles that are pure background, plus the bounding box of real art.
@@ -181,17 +189,22 @@ class Scene:
                        os.path.join(self.rips_dir, f"{tid}.webp"),
                        os.path.join(self.tiles_dir, f"{tid}.webp")])
         for path in candidates:
-            if os.path.exists(path) and os.path.getsize(path) > 1024:
+            # Mostly-flat, valid WebPs can be smaller than 1 KB.
+            if os.path.exists(path) and os.path.getsize(path) > 0:
                 break
         else:
-            self._surfaces[tid] = None
-            return None
+            return self._remember_surface(tid, None)
         pix = GdkPixbuf.Pixbuf.new_from_file(path)
         surf = cairo.ImageSurface(cairo.FORMAT_ARGB32,
                                   pix.get_width(), pix.get_height())
         cr = cairo.Context(surf)
         Gdk.cairo_set_source_pixbuf(cr, pix, 0, 0)
         cr.paint()
+        return self._remember_surface(tid, surf)
+
+    def _remember_surface(self, tid, surf):
+        # Negative lookups belong in the LRU too; otherwise the next lookup
+        # tries to remove a tile that was never added to _surface_order.
         self._surfaces[tid] = surf
         self._surface_order.append(tid)
         while len(self._surface_order) > self.surface_budget:
@@ -213,7 +226,6 @@ class Scene:
         path = getattr(self, "mask_path", None)
         if path:
             self.mask_surf = None
-            self._mask_cache_key = None
             self.load_mask(path)
             return True
         return False
@@ -238,6 +250,7 @@ class Scene:
         self.mask_surf = cairo.ImageSurface.create_for_data(
             buf, cairo.FORMAT_A8, im.width, im.height, im.width)
         self._mask_buf = buf          # cairo reads straight from this buffer
+        self._mask_cache.clear()
         print(f"mask: {path} {im.width}x{im.height} "
               f"(scale {self.mask_scale:g})", flush=True)
 
@@ -253,8 +266,9 @@ class Scene:
             return None
         key = (round(cam.zoom, 4), round(cam.x, 1), round(cam.y, 1),
                view_w, view_h)
-        if getattr(self, "_mask_cache_key", None) == key:
-            return self._mask_cache
+        if key in self._mask_cache:
+            self._mask_cache.move_to_end(key)
+            return self._mask_cache[key]
         surf = cairo.ImageSurface(cairo.FORMAT_A8, view_w, view_h)
         mcr = cairo.Context(surf)
         mcr.scale(cam.zoom, cam.zoom)
@@ -264,28 +278,70 @@ class Scene:
         mcr.set_source_surface(self.mask_surf, 0, 0)
         mcr.get_source().set_filter(cairo.FILTER_NEAREST)
         mcr.paint()
-        self._mask_cache, self._mask_cache_key = surf, key
+        self._cache_viewport(self._mask_cache, key, surf)
         return surf
+
+    def _cache_viewport(self, cache, key, surface):
+        cache[key] = surface
+        cache.move_to_end(key)
+        while len(cache) > self.viewport_cache_budget:
+            cache.popitem(last=False)
+
+    def _paint_background(self, cr, background, view_w, view_h):
+        """Resize the photographic backdrop only on a size/scale change."""
+        import cairo
+        sx, sy = cr.get_target().get_device_scale()
+        key = (background, view_w, view_h, sx, sy)
+        surface = self._background_cache.get(key)
+        if surface is None:
+            import math
+            surface = cairo.ImageSurface(
+                cairo.FORMAT_ARGB32,
+                math.ceil(view_w * sx), math.ceil(view_h * sy))
+            surface.set_device_scale(sx, sy)
+            paint_cover(cairo.Context(surface), background, view_w, view_h)
+            self._cache_viewport(self._background_cache, key, surface)
+        else:
+            self._background_cache.move_to_end(key)
+        cr.set_source_surface(surface, 0, 0)
+        cr.get_source().set_filter(cairo.FILTER_NEAREST)
+        cr.paint()
 
     def draw(self, cr, cam, view_w, view_h, objs=True, hover=None, smooth=False,
              anim=None, holo=None, background=None, all_boxes=False,
              addons=None):
         import cairo
         if background is not None:
-            paint_cover(cr, background, view_w, view_h)
+            self._paint_background(cr, background, view_w, view_h)
         else:
             cr.set_source_rgb(0.02, 0.02, 0.03)
             cr.paint()
 
         mask = self._mask_device(cam, view_w, view_h)
         if mask is not None:
-            # Draw the scene offscreen, then composite it through the mask so a
-            # hand-drawn boundary is exact rather than guessed at per tile.
-            tmp = cairo.ImageSurface(cairo.FORMAT_ARGB32, view_w, view_h)
+            key = (view_w, view_h)
+            tmp = self._tile_targets.get(key)
+            if tmp is None:
+                tmp = cairo.ImageSurface(cairo.FORMAT_ARGB32, view_w, view_h)
+                self._cache_viewport(self._tile_targets, key, tmp)
+            else:
+                self._tile_targets.move_to_end(key)
             tcr = cairo.Context(tmp)
+            tcr.set_operator(cairo.OPERATOR_CLEAR)
+            tcr.paint()
+            tcr.set_operator(cairo.OPERATOR_OVER)
             self._paint_tiles(tcr, cam, view_w, view_h, smooth, anim)
+            # Apply the mask at the scene buffer's own resolution. Masking two
+            # separately scaled patterns directly into a high-DPI GTK surface
+            # takes ~150 ms per frame; one pre-masked, nearest-neighbour blit
+            # keeps the same silhouette and sharp pixel-art edges.
+            tcr.set_operator(cairo.OPERATOR_DEST_IN)
+            tcr.set_source_surface(mask, 0, 0)
+            tcr.paint()
             cr.set_source_surface(tmp, 0, 0)
-            cr.mask_surface(mask, 0, 0)
+            cr.get_source().set_filter(
+                cairo.FILTER_GOOD if smooth else cairo.FILTER_NEAREST)
+            cr.paint()
         else:
             self._paint_tiles(cr, cam, view_w, view_h, smooth, anim)
 
