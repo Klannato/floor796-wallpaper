@@ -20,7 +20,10 @@ import sys
 import brotli  # noqa: F401  (imported for the kiosk decoder)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KIOSK = os.path.join(ROOT, "vendor", "floor796-kiosk")
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import kiosk  # noqa: E402  (fetches vendor/floor796-kiosk on first run)
+
+KIOSK = kiosk.ensure()
 sys.path.insert(0, KIOSK)
 
 # hologram.py imports pygame at module level but the decoder path never uses it.

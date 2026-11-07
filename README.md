@@ -32,21 +32,32 @@ pip install brotli
 
 `vendor/` is not tracked (several GB of frames). Rebuild it once:
 
+Run these in order; each is idempotent, so a re-run only fills gaps:
+
 ```bash
 python3 tools/fetch_meta.py              # matrix.json + changelog.json
 python3 tools/rip_tiles.py               # per-tile mp4 -> lossless frame (110)
-python3 tools/pack_frames.py --size 256  # animation LODs
+python3 tools/pack_frames.py --size 256  # animation LODs (downloads mp4s itself)
 python3 tools/pack_frames.py --size 512
-python3 tools/rip_hologram.py            # teleporter room scenes (.f796.br)
+python3 tools/rip_hologram.py             # hologram room scenes (.f796.br)
 python3 tools/downsample_holo.py         # half-res hologram pack
+python3 tools/rip_addons.py              # teleporter / fog / event clips
+python3 tools/bake_fog.py                # fog plume (tiled + masked)
 python3 tools/build_keyed.py             # void-transparent tiles
 python3 tools/build_mask.py              # silhouette mask starter
+tools/build_probe.sh                     # optional: 1 fps while a window covers
 ```
 
 The 1024 LOD is generated on demand when you zoom past 1.05.
 
-`tools/rip_hologram.py` needs `brotli` and the kiosk decoder, so run it with the
-interpreter that has brotli installed.
+Anything that decodes `.f796.br` (`rip_hologram`, `rip_addons`, `bake_fog`) needs
+`brotli` **and** the kiosk decoder, which is not vendored here. Those tools clone
+`https://github.com/arionl/floor796-kiosk` into `vendor/floor796-kiosk` on first
+use, so run them with the interpreter that has brotli (`python3` on PATH in this
+project; `/usr/bin/python3` is the one with GTK).
+
+`build_probe.sh` is optional and needs `gcc` + `wayland-client` headers. Without
+it the wallpaper simply animates at full rate; nothing else depends on it.
 
 ## Run
 

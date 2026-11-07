@@ -27,6 +27,32 @@ from PIL import Image, ImageChops, ImageStat
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "vendor", "mp4")
+CDN = "https://cdn.floor796.com/data/"
+
+
+def ensure_mp4(tid):
+    """Return the tile's mp4, downloading it once into vendor/mp4.
+
+    rip_tiles downloads to a temporary directory and throws the video away, so
+    a fresh clone has nothing for this tool to pack. Fetch on demand instead of
+    making the install order matter.
+    """
+    dst = os.path.join(SRC, f"{tid}.mp4")
+    if os.path.exists(dst) and os.path.getsize(dst) > 1024:
+        return dst
+    with open(os.path.join(ROOT, "vendor", "matrix.json")) as f:
+        matrix = json.load(f)
+    rel = None
+    for row in matrix["mat"]:
+        for t in row:
+            if isinstance(t, dict) and t.get("id") == tid:
+                rel = (t.get("video") or {}).get("mp4")
+    if not rel:
+        return None
+    os.makedirs(SRC, exist_ok=True)
+    subprocess.run(["curl", "-fsSL", CDN + rel, "-o", dst], check=True,
+                   timeout=180)
+    return dst
 OUT = os.path.join(ROOT, "vendor", "anim_512")   # --size overrides
 SIZES = {256: (256, 205), 512: (512, 410), 1024: (1024, 820)}
 FRAME_W, FRAME_H = SIZES[512][0], SIZES[512][1]   # replaced by --size
@@ -37,7 +63,9 @@ STATIC_THRESHOLD = 0.2           # mean abs diff below this => static
 
 
 def pack(tid):
-    src = os.path.join(SRC, f"{tid}.mp4")
+    src = ensure_mp4(tid)
+    if src is None:
+        return tid, "no video in matrix", 0
     dst = os.path.join(OUT, f"{tid}.raw")
     if os.path.exists(dst) and os.path.getsize(dst) > 1024:
         return tid, "exists", 0
@@ -93,7 +121,13 @@ def main():
             sys.exit(f"--size must be one of {sorted(SIZES)}")
         FRAME_W, FRAME_H = SIZES[size]
         OUT = os.path.join(ROOT, "vendor", f"anim_{size}")
-    want = args or sorted(f[:-4] for f in os.listdir(SRC) if f.endswith(".mp4"))
+    if args:
+        want = args
+    else:
+        with open(os.path.join(ROOT, "vendor", "matrix.json")) as f:
+            mat = json.load(f)
+        want = sorted(t["id"] for row in mat["mat"] for t in row
+                      if isinstance(t, dict) and t.get("id"))
     os.makedirs(OUT, exist_ok=True)
     print(f"packing {len(want)} tile(s) at {FRAME_W}x{FRAME_H} -> {OUT}")
     stats = {"packed": 0, "static": 0, "exists": 0}

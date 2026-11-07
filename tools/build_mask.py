@@ -19,6 +19,24 @@ import os
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def content_index():
+    """The art bounding box, computed by the scene if nobody has yet.
+
+    `vendor/content_index.json` is a cache `Scene` writes on first use; a fresh
+    clone has not run the app, and this tool used to fail on the missing file.
+    """
+    path = os.path.join(ROOT, "vendor", "content_index.json")
+    if not os.path.exists(path):
+        import sys
+        sys.path.insert(0, os.path.join(ROOT, "app"))
+        from scene import Scene
+        Scene()                      # writes the cache
+    with open(path) as f:
+        return json.load(f)
+
+
 KEYED = os.path.join(ROOT, "vendor", "keyed")
 OUT = os.path.join(ROOT, "vendor", "mask_base.png")
 INDEX = os.path.join(ROOT, "vendor", "content_index.json")
@@ -29,8 +47,7 @@ TILE_W, TILE_H = 1024, 820
 
 
 def main():
-    with open(INDEX) as f:
-        bbox = json.load(f)["bbox"]
+    bbox = content_index()["bbox"]
     x1, y1, x2, y2 = bbox
     W, H = x2 - x1, y2 - y1
 

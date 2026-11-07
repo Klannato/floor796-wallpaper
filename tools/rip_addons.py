@@ -30,7 +30,10 @@ import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "vendor", "floor796-kiosk"))
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import kiosk  # noqa: E402  (fetches vendor/floor796-kiosk on first run)
+
+sys.path.insert(0, kiosk.ensure())
 sys.path.insert(0, os.path.join(ROOT, "app"))
 
 import brotli  # noqa: F401,E402  (the kiosk decoder needs it)
