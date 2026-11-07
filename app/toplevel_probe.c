@@ -40,6 +40,7 @@ static struct toplevel {
     uint32_t state;
     int outs[MAX_TOPS_OUT];      /* indices into outs[] */
     int n_outs;
+    char title[96];
 } tops[MAX_TOPLEVELS];
 static int n_tops = 0;
 
@@ -81,8 +82,11 @@ static void on_state(void *data, struct zcosmic_toplevel_handle_v1 *h, struct wl
     t->state = 0;
     uint32_t *p;
     wl_array_for_each(p, state) { if (*p < 32) t->state |= 1u << *p; }
-    if (getenv("F796_PROBE_DEBUG"))
-        fprintf(stderr, "debug: toplevel state=0x%x\n", t->state);
+    if (debug) {
+        fprintf(stderr, "debug: [%s] state=0x%x outs=", t->title, t->state);
+        for (int k = 0; k < t->n_outs; k++) fprintf(stderr, "%d,", t->outs[k]);
+        fprintf(stderr, "\n");
+    }
     recompute();
 }
 
@@ -100,7 +104,11 @@ static void on_closed(void *data, struct zcosmic_toplevel_handle_v1 *h) {
 }
 
 static void on_done(void *d, struct zcosmic_toplevel_handle_v1 *h) { (void)d; (void)h; }
-static void on_title(void *d, struct zcosmic_toplevel_handle_v1 *h, const char *t) { (void)d; (void)h; (void)t; }
+static void on_title(void *d, struct zcosmic_toplevel_handle_v1 *h, const char *t) {
+    (void)h;
+    struct toplevel *tp = d;
+    snprintf(tp->title, sizeof tp->title, "%s", t ? t : "");
+}
 static void on_app_id(void *d, struct zcosmic_toplevel_handle_v1 *h, const char *a) { (void)d; (void)h; (void)a; }
 static int output_index(struct wl_output *o) {
     for (int i = 0; i < n_outs; i++) if (outs[i].o == o) return i;
