@@ -107,10 +107,15 @@ def show_video(url, title=""):
         return False
     cmd = ["ffplay", "-loop", "0", "-an", "-loglevel", "quiet",
            "-window_title", title or "floor796", url]
+    # Reap on a thread instead of on the next launch: an ffplay child that
+    # nobody waits on stays a zombie in the wallpaper process, visible in ps as
+    # "<defunct>" long after the window is gone.
     _video_refs[:] = [p for p in _video_refs if p.poll() is None]
     try:
-        _video_refs.append(subprocess.Popen(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _video_refs.append(proc)
+        threading.Thread(target=proc.wait, daemon=True).start()
     except OSError as e:
         print(f"show_video: {e}", flush=True)
         return False
