@@ -130,6 +130,7 @@ def main():
             print(f"backdrop missing: {bg_path}", flush=True)
 
     anim = holo = addons = cover = None
+    from anim import FPS
     if not args.no_animate:
         from addons import Addons
         from anim import AnimSheets
@@ -145,6 +146,7 @@ def main():
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
         "layout": None, "boxes": args.debug_boxes, "addon_sig": (),
+        "animation_frame": None,
         "covered_next": {},
     }
     display = Gdk.Display.get_default()
@@ -412,13 +414,17 @@ def main():
         # the left one must not slow the right one down. A covered output is
         # invisible, so one frame per second is plenty there.
         now = time.monotonic()
+        frame = int(time.time() * FPS)
+        frame_changed = frame != state["animation_frame"]
+        state["animation_frame"] = frame
         sig_changed = False
-        if addons is not None and addons.items:
+        if frame_changed and addons is not None and addons.items:
             sig = addons.signature(now)
             if sig != state["addon_sig"]:
                 state["addon_sig"] = sig
                 sig_changed = True
-        if anim is not None and anim.live:
+        if frame_changed and (holo is not None
+                              or (anim is not None and anim.live)):
             sig_changed = True
 
         visible = set()
@@ -443,7 +449,9 @@ def main():
         check_layout()
         return True
 
-    GLib.timeout_add(100, tick)
+    # Check more often than the source frame interval, but redraw only when its
+    # 12 FPS frame changes. A 100 ms timer skips frames even with a fast renderer.
+    GLib.timeout_add(max(1, 1000 // (FPS * 4)), tick)
     Gtk.main()
 
 

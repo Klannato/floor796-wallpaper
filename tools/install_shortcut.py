@@ -23,7 +23,7 @@ PATH = os.path.expanduser(
     "~/.config/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom")
 DESC = "floor796 toggle"
 DEFAULT_CMD = (f"/usr/bin/python3 "
-               f"{os.path.expanduser('~/code/floor796-wallpaper/tools/ctl.py')} "
+               f"{os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ctl.py')} "
                f"toggle")
 
 
@@ -46,16 +46,16 @@ def entry(mods, key, cmd):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--key", default="I")
+    ap.add_argument("--key", default="i")
     ap.add_argument("--mods", default="Super,Shift")
     ap.add_argument("--cmd", default=DEFAULT_CMD)
     ap.add_argument("--remove", action="store_true")
     args = ap.parse_args()
     mods = [m.strip() for m in args.mods.split(",") if m.strip()]
-    # COSMIC keys the map by the character produced: "I" only matches with
-    # Shift held. Without Shift the entry must be lowercase or it never fires.
+    # COSMIC matches the unshifted key symbol; Shift is a separate modifier.
+    # Its shipped Super+Shift letter bindings also use lowercase key names.
     key = args.key
-    if "Shift" not in mods and len(key) == 1 and key.isupper():
+    if len(key) == 1 and key.isupper():
         key = key.lower()
 
     text = read()
