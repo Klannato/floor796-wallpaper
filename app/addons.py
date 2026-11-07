@@ -142,6 +142,22 @@ class Addons:
         names |= {k for k, v in ALIASES.items() if v in names}
         return names
 
+    def signature(self, now):
+        """Which (addon, frame) pairs are live right now.
+
+        The tick uses this to repaint only when something actually changes: an
+        unconditional `queue_draw` at 10 Hz burns a quarter of a core for scenes
+        where nothing moved, and a wallpaper is idle most of the time.
+        """
+        sig = []
+        for a in self.items:
+            if not a.active() or a.current is None:
+                continue
+            i = a.frame_index(now)
+            if i is not None:
+                sig.append((a.name, a.current, i))
+        return tuple(sig)
+
     def trigger_event(self, name):
         """React to a changelog event name. Returns True if an addon owns it."""
         target = ALIASES.get(name, name)

@@ -25,6 +25,7 @@ import argparse
 import os
 import socket
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -141,7 +142,7 @@ def main():
         "x": args.scene_x, "y": args.scene_y, "zoom": args.zoom,
         "interactive": args.interactive, "hover": None,
         "wins": [], "dirty": False, "drag": None, "press": None,
-        "layout": None, "boxes": args.debug_boxes,
+        "layout": None, "boxes": args.debug_boxes, "addon_sig": (),
     }
     display = Gdk.Display.get_default()
 
@@ -405,7 +406,13 @@ def main():
 
     def tick():
         if addons is not None and addons.items:
-            queue()          # addon clips run on the scene clock too
+            # Repaint only when an addon frame actually changed: queuing
+            # unconditionally at 10 Hz costs a quarter of a core on a scene
+            # where nothing moved.
+            sig = addons.signature(time.monotonic())
+            if sig != state["addon_sig"]:
+                state["addon_sig"] = sig
+                queue()
         if anim is not None and anim.live:
             queue()
             # Release frame mappings for tiles off screen. Safe here: this runs
