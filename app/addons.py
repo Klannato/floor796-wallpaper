@@ -110,14 +110,11 @@ class Addon:
             return el % self.clips[self.current].frames if self.current else None
         if self.trigger != "always":
             return None
-        t = int(now * FPS)
-        # A multi-clip addon advances one character per full loop of its clip.
-        if len(self.order) > 1:
-            slot = (t // self.duration) % len(self.order)
-            if self.order[slot] != self.current:
-                self.clips[self.current].drop()
-                self.current = self.order[slot]
-        return t % self.clips[self.current].frames if self.current else None
+        # The site holds one selection until you pick another, and a clip that
+        # swaps itself every loop reads as a slow flash on a wallpaper.
+        if self.current is None:
+            return None
+        return int(now * FPS) % self.clips[self.current].frames
 
 
 class Addons:

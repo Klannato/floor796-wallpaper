@@ -292,7 +292,8 @@ def main():
                 if addons is not None and addons.click(
                         cam_for(*mon_geom(mon)[:2]), ev.x, ev.y):
                     queue()
-                links.resolve(o["link"], holo=holo, addons=addons)
+                links.resolve(o["link"], holo=holo, addons=addons,
+                              title=o.get("title", ""))
                 queue()
             return True
 

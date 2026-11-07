@@ -77,16 +77,19 @@ ADAPTERS = {
     },
     "where-is-waldo": {
         "width": 89, "height": 77, "duration": 26, "trigger": "event",
+        "isolate": True,
         "point": "t5l1,376,80", "offset": (13, 15), "clip": [],
         "files": {"waldo": "/interactive/where-is-waldo/1675617723.f796.br"},
     },
     "meg": {
         "width": 143, "height": 111, "duration": 47, "trigger": "event",
+        "isolate": True,
         "point": "b2r2,764,295", "offset": (0, 0), "clip": [],
         "files": {"meg": "/interactive/meg/1773767566.f796.br"},
     },
     "banksy": {
         "width": 53, "height": 128, "duration": 47, "trigger": "event",
+        "isolate": True,
         "point": "t2r4,423,10", "offset": (0, 0), "clip": [],
         "files": {"banksy": "/interactive/banksy/1793467437.f796.br"},
     },
@@ -106,11 +109,46 @@ def scene_xy(scene, point):
     return c * 1016 + int(lx), r * 812 + int(ly)
 
 
+def isolate(frames, w, h, thresh=8):
+    """Turn a recorded rectangle into a sprite by knocking out its background.
+
+    An event clip is a recording of its region *including* the background, so
+    pasting it over the map shows a rectangular seam wherever the clip's art
+    differs from the current tiles by even a shade. The static background is the
+    per-pixel median across the whole clip; anything within `thresh` of it turns
+    transparent, so only what actually animates survives.
+    """
+    import statistics
+    n = len(frames)
+    px = w * h
+    median = bytearray(px * 4)
+    for p in range(px):
+        base = p * 4
+        for c in range(4):
+            median[base + c] = int(statistics.median(
+                [frames[i][base + c] for i in range(n)]))
+    out = []
+    for fr in frames:
+        buf = bytearray(fr)
+        for p in range(px):
+            base = p * 4
+            if (abs(fr[base] - median[base]) <= thresh
+                    and abs(fr[base + 1] - median[base + 1]) <= thresh
+                    and abs(fr[base + 2] - median[base + 2]) <= thresh):
+                buf[base + 3] = 0
+            else:
+                buf[base + 3] = 255
+        out.append(bytes(buf))
+    return out
+
+
 def rip_clip(scene, name, key, url, spec, out_root):
     from PIL import Image
     w, h = spec["width"], spec["height"]
     raw = get(url)
     frames = holo.decode_f796_br(raw, w, h)
+    if spec.get("isolate"):
+        frames = isolate(frames, w, h)
     if len(frames[0]) != w * h * 4:
         raise RuntimeError(f"{name}/{key}: frame size {len(frames[0])} "
                            f"!= {w}x{h}x4")

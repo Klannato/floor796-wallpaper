@@ -67,11 +67,18 @@ def pack(tid):
         # Raw BGRX, one frame after another: frame i sits at i*FRAME_BYTES, so
         # the renderer mmaps the file and points cairo at a slice — no decode,
         # no copy. (A grid sheet would scatter each frame across rows.)
-        with open(dst, "wb") as f:
+        # Write aside and rename: the running wallpaper mmaps this file, and a
+        # half-written pack makes a short mmap, which cairo reports as
+        # "buffer is not long enough" from inside the paint path.
+        tmp_dst = dst + ".tmp"
+        with open(tmp_dst, "wb") as f:
             for im in imgs:
                 rgba = im.convert("RGBA")
                 r, g, b, a = rgba.split()
                 f.write(Image.merge("RGBA", (b, g, r, a)).tobytes())
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_dst, dst)
         return tid, f"packed {len(imgs)}f", os.path.getsize(dst)
 
 

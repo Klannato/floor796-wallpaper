@@ -170,8 +170,15 @@ class AnimSheets:
         fw, fh = dims(size)
         fb = fw * fh * 4
         off = idx * fb
-        surf = cairo.ImageSurface.create_for_data(
-            mv[off:off + fb], cairo.FORMAT_ARGB32, fw, fh, fw * 4)
+        if len(mv) < off + fb:
+            # A pack is still being written (the hi-res tier is generated on
+            # demand): fall back rather than throwing out of a paint.
+            return None
+        try:
+            surf = cairo.ImageSurface.create_for_data(
+                mv[off:off + fb], cairo.FORMAT_ARGB32, fw, fh, fw * 4)
+        except (TypeError, ValueError):
+            return None
         # Pin the memoryview alongside the surface: cairo reads straight out of
         # that buffer, so it must outlive the surface.
         self._cur[key] = (idx, surf, mv)

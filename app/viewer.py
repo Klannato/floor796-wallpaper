@@ -197,7 +197,8 @@ def run(args):
         if moved <= 4 and o.get("link"):
             import links
             links.resolve(o["link"], holo=state["holo"],
-                          addons=state.get("addons"))
+                          addons=state.get("addons"),
+                          title=o.get("title", ""))
             request_redraw()
         return True
 

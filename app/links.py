@@ -20,6 +20,7 @@ the shower cam included — and only the first `||` part was ever acted on, so
 `play://x.mp3||https://…jpg` lost both halves.
 """
 
+import os
 import subprocess
 
 BASE = "https://floor796.com/"
@@ -29,10 +30,28 @@ PLAY_SCHEMES = ("play-loop-no-sync://", "play-loop://", "play://")
 _playing = {}          # url -> Popen, so a second click does not stack audio
 
 
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+
 def _open(url):
+    """Last resort: hand a real external page to the browser."""
     subprocess.Popen(["xdg-open", url],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"opened {url}", flush=True)
+
+
+def _show(url, title=""):
+    """Show a picture in an app window; fall back to the browser if GTK is out."""
+    try:
+        import show
+        win = show.show_image(url, title)
+        if win is not None:
+            print(f"image window: {url}", flush=True)
+            return "image"
+    except Exception as e:
+        print(f"show_image failed ({e}); opening in browser", flush=True)
+    _open(url)
+    return "image (browser)"
 
 
 def _play(url, loop=False):
@@ -63,8 +82,7 @@ def hologram_pad_index(link):
     return None
 
 
-def _part(part, holo, addons=None):
-    """Act on one `||`-separated part; returns its description or None."""
+def _part(part, holo, addons=None, title=""):
     if part == "no-click":
         return None
 
@@ -76,13 +94,15 @@ def _part(part, holo, addons=None):
             return "audio"
 
     if part.startswith("img://"):
-        _open(BASE + part[len("img://"):].lstrip("/"))
-        return "image"
+        return _show(BASE + part[len("img://"):].lstrip("/"), title)
 
     if part.startswith("interactive://"):
         # Served under /interactive/; without the prefix every page 404s,
         # which looks exactly like "the shower cam is broken".
-        _open(INTERACTIVE + part[len("interactive://"):].lstrip("/"))
+        url = INTERACTIVE + part[len("interactive://"):].lstrip("/")
+        # A real web app (video, a game) belongs in an external program, not
+        # squeezed into the wallpaper process.
+        _open(url)
         return "interactive page"
 
     if part.startswith("event://pick-hologram-"):
@@ -111,6 +131,11 @@ def _part(part, holo, addons=None):
         return None          # region marker, not an action
 
     if part.startswith(("http://", "https://")):
+        # The `||` tails are almost always reference stills (the teleport pads
+        # carry a jpg). Those belong in an app window, not a browser tab;
+        # anything else is a real external page and stays the browser's job.
+        if part.split("?")[0].lower().endswith(IMAGE_EXT):
+            return _show(part, title)
         _open(part)
         return "url"
 
@@ -118,11 +143,11 @@ def _part(part, holo, addons=None):
     return "unhandled"
 
 
-def resolve(link, holo=None, addons=None):
+def resolve(link, holo=None, addons=None, title=""):
     """Act on a changelog link. Returns a short description of what happened."""
     parts = [p.strip() for p in (link or "").split("||") if p.strip()]
     if not parts:
         return "no link"
-    done = [_part(p, holo, addons) for p in parts]
+    done = [_part(p, holo, addons, title) for p in parts]
     done = [d for d in done if d]
     return ", ".join(done) if done else "inert"
